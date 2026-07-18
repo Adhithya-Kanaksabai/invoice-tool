@@ -153,5 +153,4 @@ not just the one named field) instead of silently accepted or requiring a full m
 
 ---
 
-_Last updated: 2026-07-18 at commit 29d4363 (plus uncommitted Ruff/pytest/skill additions from
-the same session, pending the next commit)._
+_Last updated: 2026-07-18 at commit 45ed599._
