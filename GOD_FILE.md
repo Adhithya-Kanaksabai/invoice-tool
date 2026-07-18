@@ -1,16 +1,18 @@
 # GOD_FILE — Invoice Intelligence Tool, interview prep
 
 This is the "what I'd actually say out loud" version of this project. `README.md` is the
-engineering reference; `spec/design.md` has the full decision log (D1–D16). This file is for
+engineering reference; `spec/design.md` has the full decision log (D1–D17). This file is for
 talking through the project in an interview, not for documenting the code.
 
 ## Elevator pitch
 
-It's a tool that takes a scanned invoice — a PDF or an image — and turns it into structured,
-validated data: vendor, customer, invoice number, dates, line items, totals. Instead of trusting
+It's a tool that takes a scanned invoice or receipt — a PDF or an image — and turns it into
+structured, validated data: vendor, customer, dates, line items, totals. Instead of trusting
 whatever a vision LLM says, it runs the extraction through two layers of validation, catches
 arithmetic and structural problems automatically, and only asks a human to look at the specific
-fields that are actually in question — not re-check the whole document by hand.
+fields that are actually in question — not re-check the whole document by hand. It handles two
+different document types (invoices and receipts) on the same underlying engine, which is the
+actual proof that the architecture generalizes, not just a claim about it.
 
 ## Problem it solves
 
@@ -21,24 +23,26 @@ human's job into "confirm these three flagged fields," not "retype the whole inv
 
 ## Architecture, in plain English
 
-The pipeline is one **generic orchestrator** running a list of **workers**, where invoices are the
-first workflow built on top of it. Every worker is a plain function: it takes the current state
-(a dict) and returns a `WorkerResult` — a status (`ok`, `retry`, or `failed`), the updated state,
-and an optional reason. The orchestrator only ever looks at that status. It never imports the
-`Invoice` type, never knows what a subtotal is, never contains a business rule.
+The pipeline is one **generic orchestrator** running a list of **workers**, where invoices were
+the first workflow built on top of it and receipts are the second. Every worker is a plain
+function: it takes the current state (a dict) and returns a `WorkerResult` — a status (`ok`,
+`retry`, or `failed`), the updated state, and an optional reason. The orchestrator only ever looks
+at that status. It never imports the `Invoice` or `Receipt` type, never knows what a subtotal is,
+never contains a business rule.
 
 Why bother with that split instead of just writing one pipeline function? Because it means the
 *only* thing that's "generic" and reusable is the handoff shape between steps — not the workers
-themselves. If a second document type shows up later (a receipt, a purchase order), it gets its
-own extraction/validation/retry workers; only the shape of `WorkerResult` is shared, nothing
-invoice-specific leaks into the orchestrator. That's a deliberately narrow "reusable engine" — no
-speculative plugin system or config DSL for workflows that don't exist yet.
+themselves. Each document type gets its own extraction/validation/retry workers where it matters;
+only the shape of `WorkerResult` is shared, nothing document-specific leaks into the orchestrator.
+That's a deliberately narrow "reusable engine" — no speculative plugin system or config DSL for
+workflows that don't exist yet.
 
 The actual pipeline, in order: ingest the file into page images → extract with a vision LLM
 (Gemini) → validate structurally (schema) → validate against business rules (arithmetic, dates,
 duplicates) → if something failed, hand off to a Correction Worker that re-examines just the
 affected fields → re-validate → build a PASS/Warnings/Errors report → export as JSON/CSV, and
-show it all in a small Streamlit UI with the source image next to the output.
+show it all in a Streamlit UI with the source image next to the output, a live pipeline-stage
+tracker, and an explicit panel showing whether/how the agentic Correction Worker fired.
 
 ## Key decisions and the reasoning
 
@@ -59,13 +63,15 @@ show it all in a small Streamlit UI with the source image next to the output.
   == total`. The Correction Worker is the one place where "figure out what to re-examine and
   how" is a genuine judgment call without one correct fixed procedure — so that's the one part
   where the model gets a tool and decides for itself when it's done, bounded by a hard cap so
-  "decides for itself" doesn't become "loops forever."
+  "decides for itself" doesn't become "loops forever." I deliberately did NOT add more agentic
+  components just to pad this out for a resume — a second document type (see below) was the
+  actual way to demonstrate more depth, not fake multi-agent complexity around arithmetic checks
+  that a plain Python function already handles correctly and explainably.
 
-- **A registry, not hardcoded invoice knowledge.** A `schema_registry` maps a schema ID
-  (`"invoice-v1"`) to its model, business rules, and retry groups. Before this, `Invoice` was
-  imported by name in three different files. Now the validation and confidence code never
-  imports `Invoice` directly — they take a schema ID and look everything up. Adding a second
-  document type later means registering one new entry, not editing the generic path.
+- **A registry, not hardcoded document knowledge.** A `schema_registry` maps a schema ID
+  (`"invoice-v1"`, `"receipt-v1"`) to its model, business rules, and retry groups. Before this,
+  `Invoice` was imported by name in three different files. Now the validation and confidence code
+  never imports a specific document type directly — they take a schema ID and look everything up.
 
 - **Citation, not bounding boxes.** Real grounding — cropping the exact region a value came from
   — needs a layout model, which is real infrastructure with no guarantee of working reliably on
@@ -73,10 +79,37 @@ show it all in a small Streamlit UI with the source image next to the output.
   plus a short text note from the model on where it read each value (e.g. "summary section,
   Subtotal row"). That's a deliberate, named simplification, not a silent shortcut.
 
+## The second document type — proving reusability instead of asserting it
+
+The single biggest architectural addition after the first version: registering `receipt-v1`
+alongside `invoice-v1` on the exact same orchestrator and registry, deliberately with a different
+shape (`Receipt` has a merchant and a transaction, not a vendor/customer billing relationship —
+no `due_date`, but it does have `tip` and `payment_method`, which `Invoice` doesn't). This
+required **zero changes** to the orchestrator or the schema-agnostic structural validator — which
+is the actual test of whether "reusable engine" was true, not just a claim in a README.
+
+It also surfaced three real bugs that a single-schema system had been hiding the whole time:
+
+1. The Correction Worker imported the invoice's retry-group logic *by name* instead of asking the
+   registry for whichever schema's retry groups actually applied — would have silently used
+   invoice retry groups on a receipt's fields.
+2. The validator passed a hardcoded `seen_invoice_numbers` argument to every business rule. The
+   receipt's duplicate-check rule expects a differently-named argument (its natural id is a
+   transaction ID, not an invoice number) — the mismatched name would've been silently swallowed
+   by the rule's catch-all, so duplicate-transaction detection would never have actually fired,
+   with no error anywhere telling you that.
+3. Two modules found "the list of items" on a document by checking for a field literally named
+   `"line_items"` — which doesn't exist on a receipt (it's called `"items"` there). Fixed by
+   detecting the list-typed field by its actual Python type, not by guessing a name.
+
+None of these three bugs were visible with only one schema registered — they only exist because
+nothing had ever exercised the "generic" path with a genuinely different second shape. That's the
+whole argument for building this now instead of leaving it as an assertion.
+
 ## Problems encountered and how they got fixed
 
 **The schema didn't match the real invoices.** The spec assumed every invoice has a `tax` field
-and that `subtotal + tax = total`. All 5 real sample invoices turned out to be one generated
+and that `subtotal + tax = total`. The original 5 sample invoices turned out to be one generated
 template that never shows tax at all — it shows `shipping` always and `discount` sometimes. Under
 the original schema, the arithmetic check would have flagged *every single invoice* as a
 business-rule error regardless of whether the extraction was right, which would have silently
@@ -106,20 +139,45 @@ which aren't a pip package. Installed via winget, but Windows requires a shell r
 a PATH change, which wasn't an option mid-session. Fixed by having `ingest.py` fall back to the
 known winget install location if `pdftoppm` isn't found on PATH, instead of just failing.
 
+**The orchestrator silently dropped the actual failure reason.** While rebuilding the UI's error
+path, `app.py` tried to display `result.reason` on a failed pipeline run and hit an
+`AttributeError` — `PipelineResult` never actually carried a `reason` field at all; the
+orchestrator's failure branch discarded the failing worker's `reason` when converting to the
+pipeline-level result. Fixed by adding the field and threading it through. Finding this is what
+surfaced the *next* bug, immediately below.
+
+**Hit a real Gemini free-tier quota limit mid-session** (20 requests/day) from the volume of live
+testing this build involved. Confirmed via the actual API error text, not a guess — and confirms
+the hard-failure path (retry-with-backoff, then a clean reported failure rather than a crash)
+works exactly as designed under a real failure, not just a simulated one.
+
+**The Rupee currency symbol rendered as a garbled block character.** Building a more diverse,
+hand-verified test set meant generating new invoices in multiple currencies via a PDF library
+(reportlab). The ₹ symbol came out as a solid black box instead of the actual glyph — reportlab's
+default PDF fonts use an encoding that covers $/€/£ but not that particular Unicode character.
+Caught by actually opening the rendered PDF and reading it, not by trusting the generation
+script's own variables — which is the entire point of "hand-verified." Fixed by using "Rs."
+instead of relying on the symbol glyph.
+
 ## Evaluation results
 
-Running `eval.py` over all 5 sample invoices, comparing against hand-verified ground truth:
+Test set: **17 hand-verified documents** (14 invoices, 3 receipts), up from the original 5 — now
+spanning 3 distinct visual templates, 4 currencies, varied optional-field combinations, one
+deliberate date-order-warning case, and 3 deliberately blurred/rotated/noisy images (the first
+time this project's test data has actually exercised the "ambiguous/unreadable" extraction-status
+path, rather than only clean digital PDFs).
 
-- **Extraction success rate: 100%** — every invoice completed the pipeline without a hard failure.
-- **Field-level accuracy: 100%** — every scalar field and line item matched ground truth within
-  tolerance.
+_Numbers pending a live re-run — the day's Gemini free-tier quota was exhausted by this session's
+own testing volume. Everything that doesn't require the live API is independently verified: the
+scoring logic, the file-discovery/ground-truth-matching, and the rendering are all covered by unit
+tests and a dry run. Original 5-invoice result, for reference: 100% extraction success, 100% field
+accuracy._
 
-Honest caveat, not a boast: this is a small (5-invoice), uniformly clean test set — digitally
-generated PDFs from one template, one line item each, no blur, no skew, no handwriting. 100% here
-says the pipeline is correct on well-formed input, not that it's robust to messy real-world scans.
-That's exactly why the two-layer validation and the Correction Worker exist — production invoices
-won't look this clean, and the point of this project is having a real, tested mechanism for when
-they aren't.
+Honest caveat, not a boast, whatever the refreshed numbers say: every document in this set is
+either a digitally-generated PDF or a deliberately-degraded image built from one — not an actual
+scan from a real business. A high score says the pipeline is correct across the range of
+formats/currencies/degradations actually tested, not that it's robust to arbitrary real-world
+scans (different fonts, handwriting, physical damage).
 
 ## Anticipated interview questions
 
@@ -140,11 +198,18 @@ Two separate caps: the orchestrator only invokes the Correction Worker once per 
 capped at a fixed number of turns. The model decides *within* those bounds, not whether the
 bounds exist.
 
-**What would you change with more time?** Test against a genuinely messy, varied invoice set
-(different vendors, blur, handwriting, multi-page) instead of one clean template — that's the
-real test of whether the validation and retry logic earn their keep. Also build a second document
-type (a receipt) to actually prove the orchestrator/worker contract generalizes, rather than
-asserting it does from a sample size of one.
+**How do you actually know the architecture generalizes, instead of just saying it does?** I
+built a second, deliberately different document type (receipts) on the same engine and required
+zero changes to the orchestrator or the structural validator. It also surfaced three real bugs
+(a hardcoded retry-group import, a hardcoded kwarg name, two places that found "the item list" by
+guessing a field name) that only existed because nothing had tested the generic path against a
+genuinely different second shape before. That's a stronger claim than "the code is generic" — it's
+"I tried to break the genericity claim and found exactly where it was still lying."
+
+**What would you change with more time?** Test against genuinely messy real-world scans (actual
+photographed/scanned invoices, not constructed documents) — that's the real test of whether the
+validation and retry logic earn their keep beyond the 3 templates and mild synthetic degradation
+built so far.
 
 **What's the actual failure mode this catches that a naive "just call an LLM" version wouldn't?**
 A subtotal that doesn't match its line items, or a total that doesn't match subtotal + adjustments
@@ -153,4 +218,4 @@ not just the one named field) instead of silently accepted or requiring a full m
 
 ---
 
-_Last updated: 2026-07-18 at commit 45ed599._
+_Last updated: 2026-07-18 at commit 934974d._
