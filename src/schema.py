@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from datetime import date
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -29,10 +28,11 @@ class FieldStatus(str, Enum):
     value. The model should use AMBIGUOUS/UNREADABLE/MISSING rather than
     guessing when uncertain — this is what the extraction prompt instructs.
     """
+
     EXTRACTED = "extracted"
-    MISSING = "missing"        # field not present on this invoice at all
-    AMBIGUOUS = "ambiguous"     # multiple candidate values, unclear which is right
-    UNREADABLE = "unreadable"   # region exists but is illegible (blur, cutoff, etc.)
+    MISSING = "missing"  # field not present on this invoice at all
+    AMBIGUOUS = "ambiguous"  # multiple candidate values, unclear which is right
+    UNREADABLE = "unreadable"  # region exists but is illegible (blur, cutoff, etc.)
 
 
 class LineItem(BaseModel):
@@ -47,8 +47,10 @@ class Invoice(BaseModel):
     customer_name: str  # the "Bill To" party — who owes the money, not who issued the invoice
     invoice_number: str
     invoice_date: date
-    due_date: Optional[date] = None
-    currency: str = "USD"  # decided: single currency per invoice, no multi-currency detection (see design.md)
+    due_date: date | None = None
+    currency: str = (
+        "USD"  # decided: single currency per invoice, no multi-currency detection (see design.md)
+    )
 
     line_items: list[LineItem]
 
@@ -57,9 +59,9 @@ class Invoice(BaseModel):
     # test set never show tax at all, but do show discount and/or shipping. All
     # three are optional and treated as 0 when absent; see D16 in design.md and
     # business_validate.py::check_total_arithmetic for the generalized formula.
-    discount: Optional[float] = None
-    shipping: Optional[float] = None
-    tax: Optional[float] = None
+    discount: float | None = None
+    shipping: float | None = None
+    tax: float | None = None
     total: float
 
     # Per-field status, keyed by field name. Populated by extract.py from the
@@ -82,7 +84,8 @@ class Invoice(BaseModel):
 
 class Flag(BaseModel):
     """One thing a human should look at before trusting the extraction."""
+
     field: str
     reason: str
-    layer: str      # "schema" | "business"
-    severity: str    # "error" | "warning"
+    layer: str  # "schema" | "business"
+    severity: str  # "error" | "warning"

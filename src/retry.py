@@ -99,7 +99,10 @@ def _failure_reason_text(flags, retry_fields: set[str]) -> str:
 
 
 def _image_parts(pages: list[PageImage]) -> list[types.Part]:
-    return [types.Part.from_bytes(data=base64.b64decode(p.b64_png), mime_type="image/png") for p in pages]
+    return [
+        types.Part.from_bytes(data=base64.b64decode(p.b64_png), mime_type="image/png")
+        for p in pages
+    ]
 
 
 _CURRENCY_CHARS = re.compile(r"[^0-9.\-]")
@@ -137,8 +140,7 @@ def _deterministic_fallback(
 ) -> dict | None:
     """D6's documented fallback: one plain JSON re-extraction call, no tools."""
     fallback_prompt = (
-        prompt_text
-        + "\n\nRespond with ONLY a JSON object mapping each of these field "
+        prompt_text + "\n\nRespond with ONLY a JSON object mapping each of these field "
         f"names to its corrected value: {sorted(retry_fields)}. No markdown "
         "fences, no commentary."
     )
@@ -181,12 +183,16 @@ def correction_worker(state: dict) -> WorkerResult:
     note = ""
 
     for _ in range(MAX_TOOL_TURNS):
-        response = client.models.generate_content(model=MODEL_NAME, contents=contents, config=config)
+        response = client.models.generate_content(
+            model=MODEL_NAME, contents=contents, config=config
+        )
         calls = response.function_calls
         if not calls:
             break  # model didn't use the tool protocol — fall through to the deterministic fallback
 
-        contents.append(response.candidates[0].content)  # the model's turn, incl. function_call parts
+        contents.append(
+            response.candidates[0].content
+        )  # the model's turn, incl. function_call parts
 
         response_parts = []
         submitted = False
@@ -196,11 +202,15 @@ def correction_worker(state: dict) -> WorkerResult:
                 note = call.args.get("note", "")
                 submitted = True
             elif call.name == "reexamine":
-                response_parts.append(types.Part.from_function_response(
-                    name="reexamine",
-                    response={"result": "Noted — the attached image is unchanged; look again and "
-                                         "call submit_correction with your final values when ready."},
-                ))
+                response_parts.append(
+                    types.Part.from_function_response(
+                        name="reexamine",
+                        response={
+                            "result": "Noted — the attached image is unchanged; look again and "
+                            "call submit_correction with your final values when ready."
+                        },
+                    )
+                )
 
         if submitted:
             break
@@ -222,7 +232,9 @@ def correction_worker(state: dict) -> WorkerResult:
     merged_raw = invoice.model_dump(mode="json")
     for field in retry_fields:
         if field in corrected_fields:
-            merged_raw[field] = _coerce_numeric_strings(field, corrected_fields[field], doc_schema.model)
+            merged_raw[field] = _coerce_numeric_strings(
+                field, corrected_fields[field], doc_schema.model
+            )
 
     try:
         corrected_invoice = doc_schema.model.model_validate(merged_raw)

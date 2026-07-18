@@ -21,7 +21,8 @@ from __future__ import annotations
 
 from schema import Flag, Invoice
 
-# [DECISION NEEDED] exact match vs rounding tolerance
+# Arithmetic tolerance: rounds to the nearest cent rather than exact match
+# (decided: see design.md "Decided (previously open)").
 AMOUNT_TOLERANCE = 0.01
 
 
@@ -29,12 +30,14 @@ def check_line_items_sum(invoice: Invoice, **_) -> list[Flag]:
     """Line items should sum to subtotal."""
     line_sum = round(sum(li.amount for li in invoice.line_items), 2)
     if abs(line_sum - invoice.subtotal) > AMOUNT_TOLERANCE:
-        return [Flag(
-            field="subtotal",
-            reason=f"line items sum to {line_sum} but subtotal is {invoice.subtotal}",
-            layer="business",
-            severity="error",
-        )]
+        return [
+            Flag(
+                field="subtotal",
+                reason=f"line items sum to {line_sum} but subtotal is {invoice.subtotal}",
+                layer="business",
+                severity="error",
+            )
+        ]
     return []
 
 
@@ -52,36 +55,44 @@ def check_total_arithmetic(invoice: Invoice, **_) -> list[Flag]:
     tax = invoice.tax or 0.0
     expected_total = round(invoice.subtotal - discount + shipping + tax, 2)
     if abs(expected_total - invoice.total) > AMOUNT_TOLERANCE:
-        return [Flag(
-            field="total",
-            reason=f"subtotal - discount + shipping + tax = {expected_total} but total is {invoice.total}",
-            layer="business",
-            severity="error",
-        )]
+        return [
+            Flag(
+                field="total",
+                reason=f"subtotal - discount + shipping + tax = {expected_total} but total is {invoice.total}",
+                layer="business",
+                severity="error",
+            )
+        ]
     return []
 
 
 def check_date_order(invoice: Invoice, **_) -> list[Flag]:
     """invoice_date should not be after due_date."""
     if invoice.due_date and invoice.invoice_date > invoice.due_date:
-        return [Flag(
-            field="due_date",
-            reason=f"due date {invoice.due_date} is before invoice date {invoice.invoice_date}",
-            layer="business",
-            severity="warning",
-        )]
+        return [
+            Flag(
+                field="due_date",
+                reason=f"due date {invoice.due_date} is before invoice date {invoice.invoice_date}",
+                layer="business",
+                severity="warning",
+            )
+        ]
     return []
 
 
-def check_duplicate_invoice_number(invoice: Invoice, seen_invoice_numbers: set[str] | None = None, **_) -> list[Flag]:
+def check_duplicate_invoice_number(
+    invoice: Invoice, seen_invoice_numbers: set[str] | None = None, **_
+) -> list[Flag]:
     """Duplicate invoice number within the current batch (caller passes the set via context)."""
     if seen_invoice_numbers is not None and invoice.invoice_number in seen_invoice_numbers:
-        return [Flag(
-            field="invoice_number",
-            reason=f"invoice number {invoice.invoice_number} already seen in this batch",
-            layer="business",
-            severity="warning",
-        )]
+        return [
+            Flag(
+                field="invoice_number",
+                reason=f"invoice number {invoice.invoice_number} already seen in this batch",
+                layer="business",
+                severity="warning",
+            )
+        ]
     return []
 
 

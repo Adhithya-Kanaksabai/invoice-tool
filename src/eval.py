@@ -26,8 +26,17 @@ GROUND_TRUTH_DIR = Path(__file__).parent.parent / "tests" / "ground_truth"
 SCHEMA_ID = "invoice-v1"
 
 SCALAR_FIELDS = [
-    "vendor_name", "customer_name", "invoice_number", "invoice_date",
-    "due_date", "currency", "subtotal", "discount", "shipping", "tax", "total",
+    "vendor_name",
+    "customer_name",
+    "invoice_number",
+    "invoice_date",
+    "due_date",
+    "currency",
+    "subtotal",
+    "discount",
+    "shipping",
+    "tax",
+    "total",
 ]
 FLOAT_FIELDS = {"subtotal", "discount", "shipping", "tax", "total"}
 FLOAT_TOLERANCE = 0.01
@@ -117,15 +126,19 @@ def run_eval() -> dict:
             # internally and returns status="failed" rather than raising, but
             # a batch eval run must never let ONE bad invoice take down the
             # whole run regardless of where the exception originates (D9).
-            per_invoice_results.append({"file": pdf_path.name, "extraction_failed": True, "error": str(e)})
+            per_invoice_results.append(
+                {"file": pdf_path.name, "extraction_failed": True, "error": str(e)}
+            )
             continue
 
         if result.status == "failed":
-            per_invoice_results.append({
-                "file": pdf_path.name,
-                "extraction_failed": True,
-                "reason": result.history[-1] if result.history else None,
-            })
+            per_invoice_results.append(
+                {
+                    "file": pdf_path.name,
+                    "extraction_failed": True,
+                    "reason": result.history[-1] if result.history else None,
+                }
+            )
             continue
 
         extraction_successes += 1
@@ -135,18 +148,24 @@ def run_eval() -> dict:
         correct, total = score_invoice(invoice, ground_truth)
         field_correct_total += correct
         field_total_total += total
-        per_invoice_results.append({
-            "file": pdf_path.name,
-            "extraction_failed": False,
-            "field_accuracy": round(correct / total, 3) if total else None,
-            "errors": len(result.final_state["report"]["errors"]),
-            "warnings": len(result.final_state["report"]["warnings"]),
-        })
+        per_invoice_results.append(
+            {
+                "file": pdf_path.name,
+                "extraction_failed": False,
+                "field_accuracy": round(correct / total, 3) if total else None,
+                "errors": len(result.final_state["report"]["errors"]),
+                "warnings": len(result.final_state["report"]["warnings"]),
+            }
+        )
 
     return {
         "total_invoices": total_invoices,
-        "extraction_success_rate": round(extraction_successes / total_invoices, 3) if total_invoices else 0,
-        "field_accuracy": round(field_correct_total / field_total_total, 3) if field_total_total else None,
+        "extraction_success_rate": round(extraction_successes / total_invoices, 3)
+        if total_invoices
+        else 0,
+        "field_accuracy": round(field_correct_total / field_total_total, 3)
+        if field_total_total
+        else None,
         "per_invoice": per_invoice_results,
     }
 

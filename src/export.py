@@ -28,15 +28,17 @@ def export_csv(state: dict, out_path: str | Path) -> None:
     for group_name, entries in report.items():
         for entry in entries:
             flag_reasons = "; ".join(f["reason"] for f in entry.get("flags", []))
-            rows.append({
-                "group": group_name,
-                "field": entry["field"],
-                "value": entry["value"],
-                "field_status": entry["field_status"],
-                "confidence": entry["confidence"],
-                "source_note": entry["source_note"],
-                "flag_reasons": flag_reasons,
-            })
+            rows.append(
+                {
+                    "group": group_name,
+                    "field": entry["field"],
+                    "value": entry["value"],
+                    "field_status": entry["field_status"],
+                    "confidence": entry["confidence"],
+                    "source_note": entry["source_note"],
+                    "flag_reasons": flag_reasons,
+                }
+            )
 
     if not rows:
         Path(out_path).write_text("")

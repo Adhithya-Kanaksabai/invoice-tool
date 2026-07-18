@@ -24,9 +24,9 @@ MAX_DIMENSION = 2048  # resize cap so page images stay a reasonable upload size
 
 @dataclass
 class PageImage:
-    index: int          # 0-based page number
+    index: int  # 0-based page number
     image: Image.Image  # PIL image, RGB
-    b64_png: str         # base64-encoded PNG, ready for the vision API
+    b64_png: str  # base64-encoded PNG, ready for the vision API
 
 
 def _resize_if_needed(image: Image.Image) -> Image.Image:
@@ -53,9 +53,12 @@ def _find_poppler_path() -> str | None:
         return None  # already on PATH, let pdf2image find it itself
 
     candidates = glob.glob(
-        str(Path.home() / "AppData/Local/Microsoft/WinGet/Packages"
+        str(
+            Path.home()
+            / "AppData/Local/Microsoft/WinGet/Packages"
             / "oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe"
-            / "poppler-*/Library/bin")
+            / "poppler-*/Library/bin"
+        )
     )
     return candidates[0] if candidates else None
 
@@ -71,6 +74,7 @@ def load_page_images(file_path: str | Path) -> list[PageImage]:
 
     if ext == ".pdf":
         from pdf2image import convert_from_path
+
         pages = convert_from_path(str(path), poppler_path=_find_poppler_path())
     elif ext in SUPPORTED_IMAGE_EXTS:
         pages = [Image.open(path)]

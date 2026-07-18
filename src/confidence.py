@@ -77,7 +77,8 @@ def confidence_worker(state: dict) -> WorkerResult:
     """
     doc_schema = get_schema(state["schema_id"])
     field_names = [
-        name for name in doc_schema.model.model_fields
+        name
+        for name in doc_schema.model.model_fields
         if name not in {"line_items", "field_status", "source_note"}
     ]
     business_flags = [f for f in state.get("flags", []) if f.layer == "business"]

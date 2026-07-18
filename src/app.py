@@ -98,7 +98,10 @@ if uploaded:
 
             col_json, col_csv = st.columns(2)
             col_json.download_button(
-                "Download JSON", data=json_path.read_text(), file_name="result.json", mime="application/json"
+                "Download JSON",
+                data=json_path.read_text(),
+                file_name="result.json",
+                mime="application/json",
             )
             col_csv.download_button(
                 "Download CSV", data=csv_path.read_text(), file_name="result.csv", mime="text/csv"

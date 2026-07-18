@@ -17,15 +17,15 @@ doesn't exist yet. See design.md "Orchestration philosophy".
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Optional
 
 
 @dataclass
 class WorkerResult:
-    status: str                # "ok" | "retry" | "failed"
+    status: str  # "ok" | "retry" | "failed"
     state: dict
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 # A worker is any callable: dict -> WorkerResult. That's the whole contract.
@@ -35,14 +35,14 @@ Worker = Callable[[dict], WorkerResult]
 @dataclass
 class PipelineResult:
     final_state: dict
-    status: str                # "ok" | "failed"
+    status: str  # "ok" | "failed"
     history: list[str] = field(default_factory=list)  # worker names run, for debugging/eval
 
 
 def run_pipeline(
     initial_state: dict,
     workers: list[Worker],
-    correction_worker: Optional[Worker] = None,
+    correction_worker: Worker | None = None,
     max_correction_rounds: int = 1,
 ) -> PipelineResult:
     """

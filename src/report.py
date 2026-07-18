@@ -30,7 +30,8 @@ def build_report(state: dict) -> dict:
     confidence: dict[str, float] = state.get("confidence", {})
 
     field_names = [
-        name for name in doc_schema.model.model_fields
+        name
+        for name in doc_schema.model.model_fields
         if name not in {"line_items", "field_status", "source_note"}
     ]
 
@@ -54,7 +55,9 @@ def build_report(state: dict) -> dict:
             "field_status": status,
             "confidence": score,
             "source_note": invoice.source_note.get(name),
-            "flags": [{"layer": f.layer, "severity": f.severity, "reason": f.reason} for f in field_flags],
+            "flags": [
+                {"layer": f.layer, "severity": f.severity, "reason": f.reason} for f in field_flags
+            ],
         }
 
         if has_error:
