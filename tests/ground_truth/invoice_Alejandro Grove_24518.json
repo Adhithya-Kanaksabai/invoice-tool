@@ -1,0 +1,21 @@
+{
+  "vendor_name": "SuperStore",
+  "customer_name": "Alejandro Grove",
+  "invoice_number": "24518",
+  "invoice_date": "2013-01-11",
+  "due_date": null,
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "Safco Floating Shelf Set, Metal",
+      "quantity": 10,
+      "unit_price": 1962.00,
+      "amount": 19620.00
+    }
+  ],
+  "subtotal": 19620.00,
+  "discount": null,
+  "shipping": 162.76,
+  "tax": null,
+  "total": 19782.76
+}

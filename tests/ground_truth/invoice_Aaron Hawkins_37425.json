@@ -1,0 +1,21 @@
+{
+  "vendor_name": "SuperStore",
+  "customer_name": "Aaron Hawkins",
+  "invoice_number": "37425",
+  "invoice_date": "2012-10-24",
+  "due_date": null,
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "GBC VeloBind Cover Sets",
+      "quantity": 4,
+      "unit_price": 49.41,
+      "amount": 197.63
+    }
+  ],
+  "subtotal": 197.63,
+  "discount": 39.53,
+  "shipping": 2.84,
+  "tax": null,
+  "total": 160.94
+}

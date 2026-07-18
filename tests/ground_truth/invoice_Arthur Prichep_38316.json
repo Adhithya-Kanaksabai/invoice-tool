@@ -1,0 +1,21 @@
+{
+  "vendor_name": "SuperStore",
+  "customer_name": "Arthur Prichep",
+  "invoice_number": "38316",
+  "invoice_date": "2012-08-22",
+  "due_date": null,
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "Xerox 1976",
+      "quantity": 3,
+      "unit_price": 15.55,
+      "amount": 46.66
+    }
+  ],
+  "subtotal": 46.66,
+  "discount": 9.33,
+  "shipping": 1.84,
+  "tax": null,
+  "total": 39.17
+}

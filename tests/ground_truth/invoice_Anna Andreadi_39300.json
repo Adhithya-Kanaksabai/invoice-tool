@@ -1,0 +1,21 @@
+{
+  "vendor_name": "SuperStore",
+  "customer_name": "Anna Andreadi",
+  "invoice_number": "39300",
+  "invoice_date": "2012-11-30",
+  "due_date": null,
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "Cisco IP Phone 7961G VoIP phone - Dark gray",
+      "quantity": 2,
+      "unit_price": 271.90,
+      "amount": 543.80
+    }
+  ],
+  "subtotal": 543.80,
+  "discount": null,
+  "shipping": 62.54,
+  "tax": null,
+  "total": 606.34
+}

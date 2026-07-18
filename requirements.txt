@@ -1,0 +1,7 @@
+pydantic>=2.0
+pdf2image
+Pillow
+google-genai
+streamlit
+python-dotenv
+pandas
