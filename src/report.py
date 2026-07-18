@@ -15,25 +15,21 @@ from __future__ import annotations
 from confidence import CONFIDENCE_THRESHOLD
 from orchestrator import WorkerResult
 from schema import Flag
-from schema_registry import get_schema
+from schema_registry import get_scalar_field_names, get_schema
 
 
-def _field_value(invoice, field_name: str):
-    value = getattr(invoice, field_name, None)
+def _field_value(document, field_name: str):
+    value = getattr(document, field_name, None)
     return value.isoformat() if hasattr(value, "isoformat") else value
 
 
 def build_report(state: dict) -> dict:
     doc_schema = get_schema(state["schema_id"])
-    invoice = state["invoice"]
+    document = state["document"]
     flags: list[Flag] = state.get("flags", [])
     confidence: dict[str, float] = state.get("confidence", {})
 
-    field_names = [
-        name
-        for name in doc_schema.model.model_fields
-        if name not in {"line_items", "field_status", "source_note"}
-    ]
+    field_names = get_scalar_field_names(doc_schema)
 
     flags_by_field: dict[str, list[Flag]] = {}
     for f in flags:
@@ -46,15 +42,15 @@ def build_report(state: dict) -> dict:
         has_warning = any(f.severity == "warning" for f in field_flags)
         score = confidence.get(name)
         low_confidence = score is not None and score < CONFIDENCE_THRESHOLD
-        status = invoice.field_status.get(name)
+        status = document.field_status.get(name)
         ambiguous_or_unreadable = status in ("ambiguous", "unreadable")
 
         entry = {
             "field": name,
-            "value": _field_value(invoice, name),
+            "value": _field_value(document, name),
             "field_status": status,
             "confidence": score,
-            "source_note": invoice.source_note.get(name),
+            "source_note": document.source_note.get(name),
             "flags": [
                 {"layer": f.layer, "severity": f.severity, "reason": f.reason} for f in field_flags
             ],

@@ -50,4 +50,4 @@ def test_validate_schema_unknown_schema_id_raises():
     import pytest
 
     with pytest.raises(KeyError):
-        validate_schema(VALID_RAW, "receipt-v1")
+        validate_schema(VALID_RAW, "purchase-order-v1")

@@ -1,0 +1,21 @@
+{
+  "vendor_name": "Bright Software Co",
+  "customer_name": "Priya Nair",
+  "invoice_number": "INV-1006",
+  "invoice_date": "2024-04-10",
+  "due_date": "2024-03-25",
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "Consulting Hours",
+      "quantity": 5,
+      "unit_price": 150.0,
+      "amount": 750.0
+    }
+  ],
+  "subtotal": 750.0,
+  "discount": null,
+  "shipping": null,
+  "tax": 60.0,
+  "total": 810.0
+}

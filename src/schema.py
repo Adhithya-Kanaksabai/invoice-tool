@@ -89,3 +89,39 @@ class Flag(BaseModel):
     reason: str
     layer: str  # "schema" | "business"
     severity: str  # "error" | "warning"
+
+
+class ReceiptItem(BaseModel):
+    description: str
+    quantity: float
+    unit_price: float
+    amount: float
+
+
+class Receipt(BaseModel):
+    """
+    The second document type registered in schema_registry.py — deliberately
+    a different shape than Invoice, not a relabeled copy: a receipt has a
+    merchant and a transaction, not a vendor/customer billing relationship,
+    so there's no due_date or customer_name here, but there IS a tip and a
+    payment_method, neither of which exist on Invoice. This is the actual
+    test of D12/D15's claim that a second schema needs its own model and
+    rules, sharing only FieldStatus/Flag's shape with the first — see D17 in
+    design.md.
+    """
+
+    merchant_name: str
+    transaction_id: str | None = None
+    transaction_date: date
+    payment_method: str | None = None
+    currency: str = "USD"
+
+    items: list[ReceiptItem]
+
+    subtotal: float
+    tax: float | None = None
+    tip: float | None = None
+    total: float
+
+    field_status: dict[str, FieldStatus] = {}
+    source_note: dict[str, str] = {}

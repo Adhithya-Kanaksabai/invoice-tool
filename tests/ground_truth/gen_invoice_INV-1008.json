@@ -1,0 +1,27 @@
+{
+  "vendor_name": "Golden Gate Bakery",
+  "customer_name": "Isabel Chen",
+  "invoice_number": "INV-1008",
+  "invoice_date": "2024-03-01",
+  "due_date": null,
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "Sourdough Loaf",
+      "quantity": 10,
+      "unit_price": 6.5,
+      "amount": 65.0
+    },
+    {
+      "description": "Croissant (dozen)",
+      "quantity": 3,
+      "unit_price": 18.0,
+      "amount": 54.0
+    }
+  ],
+  "subtotal": 119.0,
+  "discount": 11.9,
+  "shipping": null,
+  "tax": null,
+  "total": 107.1
+}

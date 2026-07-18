@@ -1,0 +1,21 @@
+{
+  "vendor_name": "Cascade Print Shop",
+  "customer_name": "Renee Foster",
+  "invoice_number": "INV-1004",
+  "invoice_date": "2024-03-10",
+  "due_date": null,
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "Business Card Printing (500ct)",
+      "quantity": 1,
+      "unit_price": 85.0,
+      "amount": 85.0
+    }
+  ],
+  "subtotal": 85.0,
+  "discount": null,
+  "shipping": null,
+  "tax": null,
+  "total": 85.0
+}

@@ -26,13 +26,17 @@ from schema_validate import validate_schema
 def validation_worker(state: dict) -> WorkerResult:
     """
     Runs schema validation (layer 1) then business validation (layer 2)
-    against state["invoice"], merging both flag lists into state["flags"].
+    against state["document"], merging both flag lists into state["flags"].
 
     Business rules come from doc_schema.business_rules (looked up via the
     registry, per schema_id) rather than importing business_validate by name
     — this worker stays schema-agnostic the same way orchestrator.py and
     schema_validate.py do; it never knows "invoice" specifically, only that
-    some schema_id has a model and a rule list.
+    some schema_id has a model and a rule list. The `seen_ids` kwarg is the
+    same schema-agnostic name for every schema's "duplicate within this
+    batch" check — each schema's own rule decides which of its fields that
+    maps to (invoice_number vs transaction_id); see business_validate.py and
+    business_validate_receipt.py's duplicate-check functions.
 
     Extraction (extract.py) already produced a well-typed Pydantic instance,
     so schema_validate.validate_schema here mainly re-checks required-but-empty
@@ -40,15 +44,15 @@ def validation_worker(state: dict) -> WorkerResult:
     a raw dict directly, e.g. tests/eval.py, rather than the extract.py path).
     """
     schema_id = state["schema_id"]
-    invoice = state["invoice"]
+    document = state["document"]
     doc_schema = get_schema(schema_id)
 
-    _, schema_flags = validate_schema(invoice.model_dump(mode="json"), schema_id)
+    _, schema_flags = validate_schema(document.model_dump(mode="json"), schema_id)
 
-    seen_invoice_numbers = state.get("seen_invoice_numbers")
+    seen_ids = state.get("seen_document_ids")
     business_flags: list[Flag] = []
     for rule in doc_schema.business_rules:
-        business_flags.extend(rule(invoice, seen_invoice_numbers=seen_invoice_numbers))
+        business_flags.extend(rule(document, seen_ids=seen_ids))
 
     flags: list[Flag] = schema_flags + business_flags
     status = "retry" if any(f.severity == "error" for f in flags) else "ok"

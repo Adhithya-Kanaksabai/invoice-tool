@@ -1,0 +1,25 @@
+{
+  "merchant_name": "Perk Coffee House",
+  "transaction_id": "RCP-5521",
+  "transaction_date": "2024-03-05",
+  "payment_method": "Card",
+  "currency": "USD",
+  "items": [
+    {
+      "description": "Cappuccino",
+      "quantity": 1,
+      "unit_price": 4.75,
+      "amount": 4.75
+    },
+    {
+      "description": "Blueberry Muffin",
+      "quantity": 1,
+      "unit_price": 3.25,
+      "amount": 3.25
+    }
+  ],
+  "subtotal": 8.0,
+  "tax": 0.64,
+  "tip": null,
+  "total": 8.64
+}

@@ -1,0 +1,33 @@
+{
+  "vendor_name": "Thistle & Co",
+  "customer_name": "Moira Campbell",
+  "invoice_number": "INV-1003",
+  "invoice_date": "2024-01-20",
+  "due_date": "2024-02-19",
+  "currency": "GBP",
+  "line_items": [
+    {
+      "description": "Wool Blanket",
+      "quantity": 2,
+      "unit_price": 45.0,
+      "amount": 90.0
+    },
+    {
+      "description": "Tartan Scarf",
+      "quantity": 3,
+      "unit_price": 22.0,
+      "amount": 66.0
+    },
+    {
+      "description": "Leather Gloves",
+      "quantity": 1,
+      "unit_price": 38.0,
+      "amount": 38.0
+    }
+  ],
+  "subtotal": 194.0,
+  "discount": 19.4,
+  "shipping": 12.0,
+  "tax": 15.0,
+  "total": 201.6
+}

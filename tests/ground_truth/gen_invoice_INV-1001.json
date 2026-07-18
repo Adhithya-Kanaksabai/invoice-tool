@@ -1,0 +1,21 @@
+{
+  "vendor_name": "Bright Software Co",
+  "customer_name": "Dana Kim",
+  "invoice_number": "INV-1001",
+  "invoice_date": "2024-02-01",
+  "due_date": "2024-03-01",
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "Annual SaaS License",
+      "quantity": 1,
+      "unit_price": 1200.0,
+      "amount": 1200.0
+    }
+  ],
+  "subtotal": 1200.0,
+  "discount": null,
+  "shipping": null,
+  "tax": 96.0,
+  "total": 1296.0
+}

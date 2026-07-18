@@ -1,0 +1,19 @@
+{
+  "merchant_name": "QuickMart",
+  "transaction_id": null,
+  "transaction_date": "2024-03-20",
+  "payment_method": null,
+  "currency": "USD",
+  "items": [
+    {
+      "description": "AA Batteries (4pk)",
+      "quantity": 2,
+      "unit_price": 5.99,
+      "amount": 11.98
+    }
+  ],
+  "subtotal": 11.98,
+  "tax": null,
+  "tip": null,
+  "total": 11.98
+}

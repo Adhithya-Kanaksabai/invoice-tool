@@ -76,14 +76,14 @@ def test_check_date_order_passes_when_no_due_date():
 
 def test_check_duplicate_invoice_number_flags_seen_number():
     invoice = make_invoice(invoice_number="37425")
-    flags = check_duplicate_invoice_number(invoice, seen_invoice_numbers={"37425"})
+    flags = check_duplicate_invoice_number(invoice, seen_ids={"37425"})
     assert len(flags) == 1
     assert flags[0].severity == "warning"
 
 
 def test_check_duplicate_invoice_number_passes_for_new_number():
     invoice = make_invoice(invoice_number="37425")
-    assert check_duplicate_invoice_number(invoice, seen_invoice_numbers={"other"}) == []
+    assert check_duplicate_invoice_number(invoice, seen_ids={"other"}) == []
 
 
 def test_retry_field_groups_expands_total_mismatch_to_full_dependency_group():
