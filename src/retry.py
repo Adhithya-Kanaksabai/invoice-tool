@@ -7,9 +7,11 @@ validation failure, re-examine and decide when you're satisfied" doesn't have
 a single correct procedure to hardcode, unlike validation (which must never
 let an LLM decide whether subtotal + tax == total).
 
-The retry FIELD GROUP itself is still deterministic (D6/D16) — RETRY_GROUPS
-in business_validate.py, looked up per-schema via schema_registry so this
-worker stays generic rather than knowing "invoice" by name. What's agentic is
+The retry FIELD GROUP itself is still deterministic (D6/D16) — each schema's
+own RETRY_GROUPS dict (business_validate.py's for invoices,
+business_validate_receipt.py's for receipts), looked up generically via
+doc_schema.retry_groups (schema_registry.py) so this worker never imports a
+schema-specific module and never knows "invoice" by name. What's agentic is
 HOW the model re-examines the group and decides it's done: it gets one tool,
 `reexamine`, to explicitly re-look before committing via a second tool,
 `submit_correction` — bounded by MAX_TOOL_TURNS so "decides for itself when to
@@ -36,7 +38,6 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from business_validate import retry_field_groups
 from ingest import PageImage
 from orchestrator import WorkerResult
 from schema_registry import get_schema
@@ -85,12 +86,26 @@ SUBMIT_DECL = types.FunctionDeclaration(
 )
 
 
+def _expand_retry_fields(flags, retry_groups: dict[str, list[str]]) -> set[str]:
+    """
+    Which fields need re-extraction, expanded to full dependency groups for
+    arithmetic flags (per D6) — driven by whichever schema's retry_groups
+    dict the registry hands back, not a hardcoded invoice-specific import.
+    """
+    fields: set[str] = set()
+    for f in flags:
+        if f.severity != "error":
+            continue
+        fields.update(retry_groups.get(f.field, [f.field]))
+    return fields
+
+
 def _failure_reason_text(flags, retry_fields: set[str]) -> str:
     relevant = [f for f in flags if f.severity == "error"]
     lines = "\n".join(f"- {f.field}: {f.reason}" for f in relevant)
     return (
         "Validation found the following problem(s) with a prior extraction "
-        f"of this invoice:\n{lines}\n\n"
+        f"of this document:\n{lines}\n\n"
         f"Re-extract EXACTLY these fields, together, from the attached "
         f"image: {sorted(retry_fields)}. They form one dependency group — "
         "the actual error could be in any one of them (or more than one), "
@@ -164,11 +179,11 @@ def correction_worker(state: dict) -> WorkerResult:
     """
     schema_id = state["schema_id"]
     doc_schema = get_schema(schema_id)
-    invoice = state["invoice"]
+    document = state["document"]
     pages = state["pages"]
     flags = state.get("flags", [])
 
-    retry_fields = retry_field_groups(flags)
+    retry_fields = _expand_retry_fields(flags, doc_schema.retry_groups)
     if not retry_fields:
         return WorkerResult(status="ok", state=state)
 
@@ -223,13 +238,13 @@ def correction_worker(state: dict) -> WorkerResult:
 
     if not corrected_fields:
         # Even the fallback didn't produce anything usable — leave the
-        # invoice as-is. Re-validation downstream will surface the same
+        # document as-is. Re-validation downstream will surface the same
         # error flags, and since orchestrator.py's max_correction_rounds=1
         # caps how many times this worker runs per pipeline pass, the result
         # is "unresolved for human review," not an infinite loop (per D6).
         return WorkerResult(status="ok", state=state)
 
-    merged_raw = invoice.model_dump(mode="json")
+    merged_raw = document.model_dump(mode="json")
     for field in retry_fields:
         if field in corrected_fields:
             merged_raw[field] = _coerce_numeric_strings(
@@ -237,7 +252,7 @@ def correction_worker(state: dict) -> WorkerResult:
             )
 
     try:
-        corrected_invoice = doc_schema.model.model_validate(merged_raw)
+        corrected_document = doc_schema.model.model_validate(merged_raw)
     except Exception as e:
         # Corrected values didn't even type-check after coercion — same
         # "leave as-is, surface as unresolved" reasoning as above, but keep
@@ -253,7 +268,7 @@ def correction_worker(state: dict) -> WorkerResult:
         status="ok",
         state={
             **state,
-            "invoice": corrected_invoice,
+            "document": corrected_document,
             "retried_fields": retried_fields,
             "correction_note": note,
             "correction_used_fallback": used_fallback,

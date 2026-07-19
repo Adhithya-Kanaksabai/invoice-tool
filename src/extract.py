@@ -104,9 +104,10 @@ def _call_gemini(client: genai.Client, prompt: str, pages: list[PageImage]) -> s
 def extraction_worker(state: dict) -> WorkerResult:
     """
     Reads state["file_path"] and state["schema_id"], runs the Extraction
-    Worker, and returns WorkerResult with state["invoice"] (a validated
-    instance of the registered model) and state["pages"] (the source page
-    images, kept for the UI and for retry.py to reuse without re-ingesting).
+    Worker, and returns WorkerResult with state["document"] (a validated
+    instance of whichever model is registered under schema_id — Invoice,
+    Receipt, or a future schema) and state["pages"] (the source page images,
+    kept for the UI and for retry.py to reuse without re-ingesting).
     """
     schema_id = state["schema_id"]
     doc_schema = get_schema(schema_id)
@@ -120,10 +121,10 @@ def extraction_worker(state: dict) -> WorkerResult:
         try:
             raw_text = _call_gemini(client, prompt, pages)
             raw = json.loads(_strip_code_fences(raw_text))
-            invoice = doc_schema.model.model_validate(raw)
+            document = doc_schema.model.model_validate(raw)
             return WorkerResult(
                 status="ok",
-                state={**state, "pages": pages, "invoice": invoice},
+                state={**state, "pages": pages, "document": document},
             )
         except Exception as e:  # API error, bad JSON, or ValidationError — all hard failures here
             last_error = e

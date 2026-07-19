@@ -1,0 +1,31 @@
+{
+  "merchant_name": "The Rustic Fork",
+  "transaction_id": "RCP-7788",
+  "transaction_date": "2024-02-11",
+  "payment_method": "Visa",
+  "currency": "GBP",
+  "items": [
+    {
+      "description": "Grilled Salmon",
+      "quantity": 1,
+      "unit_price": 22.5,
+      "amount": 22.5
+    },
+    {
+      "description": "House Salad",
+      "quantity": 1,
+      "unit_price": 8.0,
+      "amount": 8.0
+    },
+    {
+      "description": "Sparkling Water",
+      "quantity": 2,
+      "unit_price": 3.0,
+      "amount": 6.0
+    }
+  ],
+  "subtotal": 36.5,
+  "tax": 2.92,
+  "tip": 5.48,
+  "total": 44.9
+}

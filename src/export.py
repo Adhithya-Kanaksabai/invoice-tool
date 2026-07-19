@@ -13,9 +13,10 @@ from pathlib import Path
 
 
 def export_json(state: dict, out_path: str | Path) -> None:
-    invoice = state.get("invoice")
+    document = state.get("document")
     payload = {
-        "invoice": invoice.model_dump(mode="json") if invoice else None,
+        "schema_id": state.get("schema_id"),
+        "document": document.model_dump(mode="json") if document else None,
         "report": state.get("report", {}),
         "extraction_failed": state.get("extraction_failed", False),
     }

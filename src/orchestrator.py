@@ -37,6 +37,7 @@ class PipelineResult:
     final_state: dict
     status: str  # "ok" | "failed"
     history: list[str] = field(default_factory=list)  # worker names run, for debugging/eval
+    reason: str | None = None  # carried over from the failing WorkerResult, if status == "failed"
 
 
 def run_pipeline(
@@ -70,7 +71,9 @@ def run_pipeline(
         history.append(getattr(worker, "__name__", f"worker_{i}"))
 
         if result.status == "failed":
-            return PipelineResult(final_state=state, status="failed", history=history)
+            return PipelineResult(
+                final_state=state, status="failed", history=history, reason=result.reason
+            )
 
         if result.status == "retry":
             if correction_worker is None or correction_rounds >= max_correction_rounds:

@@ -81,10 +81,16 @@ def check_date_order(invoice: Invoice, **_) -> list[Flag]:
 
 
 def check_duplicate_invoice_number(
-    invoice: Invoice, seen_invoice_numbers: set[str] | None = None, **_
+    invoice: Invoice, seen_ids: set[str] | None = None, **_
 ) -> list[Flag]:
-    """Duplicate invoice number within the current batch (caller passes the set via context)."""
-    if seen_invoice_numbers is not None and invoice.invoice_number in seen_invoice_numbers:
+    """
+    Duplicate invoice number within the current batch (caller passes the set
+    via context). The kwarg is the schema-agnostic `seen_ids` — validate.py
+    passes the same kwarg name to every schema's rules regardless of what the
+    "id" actually is (invoice_number here, transaction_id for a receipt);
+    only this function knows which of its own fields that maps to.
+    """
+    if seen_ids is not None and invoice.invoice_number in seen_ids:
         return [
             Flag(
                 field="invoice_number",
@@ -107,7 +113,7 @@ INVOICE_BUSINESS_RULES = [
 ]
 
 
-def validate_business(invoice: Invoice, seen_invoice_numbers: set[str] | None = None) -> list[Flag]:
+def validate_business(invoice: Invoice, seen_ids: set[str] | None = None) -> list[Flag]:
     """
     Run all invoice business rules. Returns a list of business-rule flags.
     Empty list == clean. Does NOT raise — issues are surfaced for a human,
@@ -120,7 +126,7 @@ def validate_business(invoice: Invoice, seen_invoice_numbers: set[str] | None = 
     """
     flags: list[Flag] = []
     for rule in INVOICE_BUSINESS_RULES:
-        flags.extend(rule(invoice, seen_invoice_numbers=seen_invoice_numbers))
+        flags.extend(rule(invoice, seen_ids=seen_ids))
     return flags
 
 

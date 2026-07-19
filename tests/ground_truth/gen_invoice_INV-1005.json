@@ -1,0 +1,39 @@
+{
+  "vendor_name": "Sunrise Textiles Pvt Ltd",
+  "customer_name": "Amit Verma",
+  "invoice_number": "INV-1005",
+  "invoice_date": "2024-02-14",
+  "due_date": "2024-03-15",
+  "currency": "INR",
+  "line_items": [
+    {
+      "description": "Cotton Fabric (m)",
+      "quantity": 20,
+      "unit_price": 150.0,
+      "amount": 3000.0
+    },
+    {
+      "description": "Zippers",
+      "quantity": 100,
+      "unit_price": 8.0,
+      "amount": 800.0
+    },
+    {
+      "description": "Thread Spools",
+      "quantity": 30,
+      "unit_price": 25.0,
+      "amount": 750.0
+    },
+    {
+      "description": "Buttons (gross)",
+      "quantity": 5,
+      "unit_price": 60.0,
+      "amount": 300.0
+    }
+  ],
+  "subtotal": 4850.0,
+  "discount": null,
+  "shipping": null,
+  "tax": 873.0,
+  "total": 5723.0
+}

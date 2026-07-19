@@ -98,6 +98,34 @@ would be its own multi-week project), a generic prompt-builder (prompt
 quality is schema-specific — nothing to generalize from a sample size of
 one).
 
+**This claim is now demonstrated, not just asserted (D17).** A second
+document type, `receipt-v1`, is registered alongside `invoice-v1` —
+deliberately a different shape (`Receipt` has `merchant_name`/`tip`/
+`payment_method`, no `due_date`/`customer_name`; its own independent business
+rules in `business_validate_receipt.py`, never calling into the invoice
+rules). Adding it required **zero changes** to `orchestrator.py` or
+`schema_validate.py`'s generic path — but it did surface three real
+genericity bugs that had been hiding because only one schema had ever been
+registered:
+
+- `retry.py` imported `business_validate.retry_field_groups` directly by
+  name, instead of going through `doc_schema.retry_groups` — would have
+  silently used invoice retry groups for a receipt.
+- `validate.py` hardcoded a `seen_invoice_numbers` kwarg when calling every
+  business rule — the receipt's duplicate-check rule expects `seen_ids`
+  (its own field is `transaction_id`, not `invoice_number`); the mismatched
+  kwarg would've been silently absorbed by the rule's `**_` catch-all and
+  the check would never fire.
+- `report.py` and `confidence.py` both excluded the field `"line_items"` *by
+  name* to find the list-typed field — receipt's list field is `"items"`.
+  Fixed by detecting the list-typed field generically (by Pydantic
+  annotation, via a new `schema_registry.get_scalar_field_names` /
+  `get_list_field_name` helper), not by name, in either module.
+
+All three were only findable by actually building a second schema and
+running it — which is exactly the point of doing this instead of leaving the
+reusability claim untested.
+
 ## Schema design
 
 ```python
@@ -213,54 +241,100 @@ it read a value (e.g. "summary section Subtotal row"). This is the
 deliberate, documented citation-level version of the pattern; bounding-box
 grounding is scoped to Future Work, not silently claimed as built.
 
+## User interface
+
+Streamlit, styled with its native badge/status/container primitives (no
+custom CSS injection needed — see `st.badge`, `st.status`, bordered
+`st.container`). Beyond the image-next-to-report layout (D10):
+
+- **Pipeline stages** — a visible tracker (Extract → Validate → Correction →
+  Score confidence → Report) built directly from `orchestrator.py`'s own
+  `PipelineResult.history`, so the architecture is visible, not just the
+  final answer. Correction shows as skipped when validation passed on the
+  first try, fired (green) when it didn't.
+- **Agentic Correction panel** — added specifically because review surfaced
+  a real gap: `retried_fields`, `correction_note`, and
+  `correction_used_fallback` were already in pipeline state but `app.py`
+  never displayed any of them, making the one agentic component in this
+  project invisible from the UI. Now shown explicitly: which fields were
+  re-examined, the model's own one-line rationale, and whether it resolved
+  via real tool-calling or the deterministic fallback.
+- **Document-type selector** — Invoice / Receipt, passing `schema_id`
+  straight into `run_pipeline`, exercising the same schema-driven UI code
+  for both.
+- A sample-invoice picker for quick testing without a manual upload each time.
+
 ## Evaluation
 
 `src/eval.py` runs the full pipeline (extraction → validation → confidence →
-correction if needed → report) over the 5-invoice test set and compares
-against hand-verified ground truth in `tests/ground_truth/`.
+correction if needed → report) over the test set and compares against
+hand-verified ground truth, now generalized (D17) to run over **both**
+registered schemas and derive which fields to compare from each
+ground-truth file's own keys — no hardcoded per-schema field list.
+
+Test set: **17 hand-verified documents** (14 invoices, 3 receipts) — up from
+the original 5, now spanning 3 distinct visual templates, 4 currencies
+(USD/EUR/GBP/INR), varied optional-field combinations (tax-only,
+discount+shipping, all four, none), multi-item and single-item invoices, one
+deliberate date-order-warning case (due date before invoice date), and 3
+deliberately blurred/rotated/noisy images — the first time this project's
+test set has actually exercised the `ambiguous`/`unreadable` `field_status`
+path rather than only clean digital PDFs. Generated via
+`tests/generate_sample_invoices.py` (reportlab), each one hand-verified by
+reading the actual rendered output — which caught a real bug: the ₹ (Rupee)
+glyph rendered as a garbled tofu-box character, since reportlab's base-14
+PDF fonts use WinAnsiEncoding, which covers $/€/£ but not that Unicode code
+point. Fixed by using "Rs." instead of relying on the symbol glyph.
 
 ```
-Extraction success rate: 100.0%
-Field-level accuracy:    100.0%
+_TODO: real numbers pending — the Gemini free-tier daily quota (20
+requests/day) was exhausted by this session's live testing. eval.py itself,
+its scoring logic, and its file-discovery/ground-truth-matching are all
+verified correct via unit tests and a dry run (see tests/unit/test_eval.py) —
+what's still needed is one live run once the quota resets._
 ```
 
-**Honest caveat, not a boast:** this is a small (5-invoice), clean test set —
-digitally-generated PDFs, one line item each, no blur/skew/handwriting. A
-100% score here says the pipeline is *correct* on well-formed input, not that
-it's robust to messy real-world scans. The two-layer validation and
-Correction Worker exist precisely because production invoices won't look
-this clean — see Limitations below.
+**Honest caveat, not a boast, even once real numbers land:** every document
+in this set is either a digitally-generated PDF or a deliberately-degraded
+image built from one — not an actual scan of a real invoice from a real
+business. A high score here says the pipeline is *correct* on the range of
+formats/currencies/degradations tested, not that it's robust to arbitrary
+real-world scans (different fonts, handwriting, physical damage, unusual
+layouts entirely outside these 3 templates).
 
 ## Limitations
 
-- Test set is small (5 invoices) and uniformly clean (one template, one
-  vendor, one line item per invoice). No blurry scans, no handwriting, no
-  multi-page or multi-line-item invoices were exercised.
+- Test set (17 documents) is synthetically constructed, not sourced from
+  real businesses — see the caveat above. Real-world invoice diversity
+  (arbitrary templates, handwriting, physical scan artifacts) goes well
+  beyond 3 templates and mild PIL-based degradation.
 - No bounding-box grounding — citation-level text notes only (see above).
 - Single invoice per file; no multi-invoice-per-file support.
-- No jurisdiction-specific rules (GST/VAT) — none of the test invoices
-  needed them.
+- No jurisdiction-specific rules (GST/VAT) beyond generic tax-as-a-field
+  handling — no rule actually validates a VAT number or rate.
 - No precision/recall for line-item detection specifically (only field
   accuracy and extraction success rate, per the original eval scope).
 - The Correction Worker's fallback path (deterministic single-shot retry, for
-  when tool-calling doesn't converge) is implemented but not exercised by
-  this test set, since the agentic path succeeded on first try every time it
-  was tested.
+  when tool-calling doesn't converge) is implemented and unit-tested but not
+  yet observed firing against a real document in this larger set — every
+  live test so far resolved via real tool-calling on the first attempt.
 
 ## Future work
 
 - Bounding-box highlighting (click a field, see the region on the invoice).
 - Multi-invoice-per-file support.
-- Jurisdiction-specific rules (GST, VAT) once real test data exists.
+- Jurisdiction-specific rules (GST, VAT) with real validation logic (VAT
+  number format/checksum, rate-by-jurisdiction), not just tax-as-a-field.
 - Precision/recall for line-item detection specifically.
-- A second document workflow (receipt, PO) to actually prove out the
-  orchestrator/worker contract's reusability with a real second data point,
-  rather than a single-schema guess.
+- Real-world test invoices (actual scans, not constructed documents) to
+  stress-test beyond what 3 authored templates can cover.
 
 ## Tech stack
 
 Python 3.11, Pydantic v2, `pdf2image` + Poppler, Pillow, `google-genai`
-(Gemini, free under Google Student Pro), Streamlit, pandas.
+(Gemini, free under Google Student Pro), Streamlit, pandas. Dev/test-only:
+Ruff (lint + format), pytest, `reportlab` (test-data generation only — not a
+pipeline dependency).
 
 ## Running it
 
@@ -273,6 +347,11 @@ venv/Scripts/streamlit run src/app.py
 ```
 
 Run the eval suite: `venv/Scripts/python src/eval.py`
+
+Run the unit tests (no API key needed, pure logic only):
+`venv/Scripts/pip install -r requirements-dev.txt && venv/Scripts/pytest tests/unit`
+
+Regenerate the synthetic test set: `venv/Scripts/pip install -r requirements-test.txt && venv/Scripts/python tests/generate_sample_invoices.py`
 
 ## Screenshots
 

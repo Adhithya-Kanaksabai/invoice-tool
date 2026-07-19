@@ -411,6 +411,60 @@ D16. **The schema and arithmetic rule were generalized after checking the real
      mismatch caused by a wrong `discount`/`shipping` read would never
      resolve.
 
+D17. **A second document type (`receipt-v1`) was actually built, to prove
+     D12/D15's reusability claim instead of leaving it asserted.** `Receipt`
+     is a deliberately different shape than `Invoice` — `merchant_name`
+     instead of `vendor_name`/`customer_name`, `transaction_date` instead of
+     `invoice_date`/`due_date`, `tip` and `payment_method` which `Invoice`
+     doesn't have at all — with its own independent business rules in
+     `business_validate_receipt.py` (`check_receipt_items_sum`,
+     `check_receipt_total_arithmetic`, `check_receipt_duplicate_transaction_id`),
+     never calling into `business_validate.py`'s functions, per D15's own
+     rule that only the *shape* (`Callable[..., list[Flag]]`) is shared
+     across schemas.
+
+     Registering it required zero changes to `orchestrator.py` or
+     `schema_validate.py`'s generic path — confirming the claim. It DID
+     surface three real genericity bugs that a single-schema registry had
+     been hiding:
+
+     - `retry.py` imported `business_validate.retry_field_groups` directly
+       by name instead of reading `doc_schema.retry_groups` from the
+       registry — would have silently applied invoice retry groups to a
+       receipt's field names. Fixed by expanding retry groups generically
+       inside `retry.py` itself, driven by whichever schema's
+       `retry_groups` dict the registry returns.
+     - `validate.py` passed a hardcoded `seen_invoice_numbers` kwarg to
+       every business rule. A receipt's duplicate-check rule expects
+       `seen_ids` (its natural id is `transaction_id`, not
+       `invoice_number`) — the mismatched kwarg name would have been
+       silently absorbed by the rule's `**_` catch-all, so the receipt's
+       duplicate-transaction check would never have fired, with no error
+       raised anywhere. Fixed by making the kwarg name itself
+       schema-agnostic (`seen_ids`) — every schema's own rule function
+       decides which of its fields that maps to.
+     - `report.py` and `confidence.py` both excluded the field named
+       `"line_items"` specifically to find the one list-typed field on the
+       model. Receipt's list field is `"items"`. Fixed by detecting the
+       list-typed field generically, by Pydantic annotation
+       (`typing.get_origin(...) is list`), not by name — added
+       `schema_registry.get_scalar_field_names()` /
+       `get_list_field_name()` as the one shared place this detection
+       happens, used by `report.py`, `confidence.py`, `app.py`, and
+       `eval.py` instead of each reimplementing it.
+
+     Also renamed the pipeline state key from `state["invoice"]` to the
+     generic `state["document"]` across every worker (`extract.py`,
+     `validate.py`, `retry.py`, `report.py`, `export.py`, `app.py`,
+     `eval.py`) — the orchestrator/worker contract was already schema-
+     agnostic in principle, but the state key itself said "invoice"
+     everywhere, which was never actually tested against a non-invoice
+     schema until now.
+
+     All three bugs were only findable by actually registering and running
+     a second schema — exactly why this was worth building now rather than
+     leaving the claim as an assertion in Future Work.
+
 ## Tech stack
 
 - Python 3.11+
@@ -424,6 +478,8 @@ D16. **The schema and arithmetic rule were generalized after checking the real
   change to `extract.py` only, not to schema/validation/retry logic.
 - `pandas` — CSV export / report shaping, if needed
 - `streamlit` — UI
+- Dev/test-only (not pipeline dependencies): `ruff` (lint + format), `pytest`,
+  `reportlab` (synthetic test-invoice generation, `tests/generate_sample_invoices.py`)
 
 ## Modules
 
@@ -432,9 +488,12 @@ D16. **The schema and arithmetic rule were generalized after checking the real
                        continue/retry/stop. Never imports `Invoice` or
                        anything invoice-specific.
 - `schema_registry.py` — looks up Pydantic model + business rules + retry
-                       groups + required fields by `schema_id` (D15). The
-                       one file that knows "invoice-v1" exists; everything
-                       else takes a schema_id as a parameter.
+                       groups + required fields by `schema_id` (D15). Two
+                       schemas registered as of D17: `invoice-v1`,
+                       `receipt-v1`. Also the one shared place that detects
+                       a schema's scalar vs. list-typed fields generically
+                       (`get_scalar_field_names`, `get_list_field_name`),
+                       by Pydantic annotation, not by field name.
 - `ingest.py`      — load file, detect type, render/resize to page images, base64 encode
 - `extract.py`      — Extraction Worker. Build the extraction prompt with the schema,
                        call the vision LLM (retry-with-backoff x2 on hard API/parse
@@ -447,32 +506,54 @@ D16. **The schema and arithmetic rule were generalized after checking the real
                        packaged as `INVOICE_BUSINESS_RULES` for schema_registry.py.
                        Also defines RETRY_GROUPS mapping arithmetic flags to their
                        field dependency group (per D6).
+- `business_validate_receipt.py` — the receipt-v1 counterpart (D17), independent
+                       of business_validate.py per D15 — its own arithmetic/
+                       duplicate-check rules and its own RECEIPT_RETRY_GROUPS.
 - `confidence.py`   — heuristic confidence scoring from validation + retry signals
 - `retry.py`        — Correction Worker (the one agentic loop, per D11). Gives
                        the model a tool to re-examine a RETRY_GROUP and decides
                        via tool-calling when it's done, capped at 1 round.
+                       Expands retry groups generically via doc_schema.retry_groups
+                       (D17) rather than importing business_validate.py by name.
 - `report.py`        — Report Worker: shape flags + confidence into the
                        PASS/Warning/Error grouping
 - `export.py`        — write JSON + CSV, report grouping included (plain I/O,
                        not a worker — nothing to orchestrate)
-- `app.py`          — Streamlit UI: image + validation report side by side (per D10)
-- `eval.py`          — run the pipeline over the test set, compare to ground truth,
-                       report field accuracy + extraction success rate
-                       (extraction_failed invoices count against success rate,
-                       excluded from field accuracy since there's no output to score)
+- `app.py`          — Streamlit UI: image + validation report side by side (per D10),
+                       a pipeline-stage tracker and an Agentic Correction panel driven
+                       off orchestrator.py's own PipelineResult.history/state, and a
+                       document-type selector (Invoice/Receipt, per D17)
+- `eval.py`          — run the pipeline over both registered schemas' test sets,
+                       compare to ground truth, report field accuracy + extraction
+                       success rate (extraction_failed invoices count against success
+                       rate, excluded from field accuracy since there's no output to
+                       score). Generalized (D17) to derive comparison fields from
+                       each ground-truth file's own keys, not a hardcoded field list.
+- `tests/generate_sample_invoices.py` — test-data authoring script (reportlab),
+                       not part of the production pipeline; generates the diverse
+                       17-document test set, hand-verified afterward by reading the
+                       actual rendered output.
 
 ## Data flow contract
 
 Every worker returns `WorkerResult{status, state, reason}`. `state` is opaque
-to the orchestrator; within the invoice workflow it carries:
+to the orchestrator; within a document workflow (invoice or receipt) it carries:
 
-- after Extraction Worker: `state["invoice"]` = raw `Invoice` (unvalidated)
-- after Validation Worker: `state["invoice"]`, `state["flags"]` = schema flags + business flags
-- after Correction Worker (if triggered): `state["invoice"]` updated for the
-  retried field group, `state["retried_fields"]` for confidence.py
+- after Extraction Worker: `state["document"]` = the raw, schema-validated
+  document instance (unvalidated in the business-rule sense — `Invoice` or
+  `Receipt`, whichever `schema_id` resolved to)
+- after Validation Worker: `state["document"]`, `state["flags"]` = schema flags + business flags
+- after Correction Worker (if triggered): `state["document"]` updated for the
+  retried field group, `state["retried_fields"]`, `state["correction_note"]`,
+  `state["correction_used_fallback"]` — the latter two added so the UI can
+  actually display what the Correction Worker did (see app.py above)
 - confidence scoring reads `state["flags"]` + `state["retried_fields"]`,
   writes `state["confidence"]`
 - after Report Worker: `state["report"]` = grouped `{pass: [...], warnings: [...], errors: [...]}`
+
+(Prior to D17 this was named `state["invoice"]` — renamed to the generic
+`state["document"]` across every worker, since the key itself hardcoded
+"invoice" even though the contract was already meant to be schema-agnostic.)
 - `export.py` reads final `state` and writes `result.json`, `result.csv`
 
 ## Decided (previously open)

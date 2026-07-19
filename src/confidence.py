@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from orchestrator import WorkerResult
 from schema import Flag
-from schema_registry import get_schema
+from schema_registry import get_scalar_field_names, get_schema
 
 # Threshold below which a field is flagged as low-confidence (decided: 0.7,
 # see design.md "Decided (previously open)").
@@ -76,11 +76,7 @@ def confidence_worker(state: dict) -> WorkerResult:
     contract and D13 (three signals stay visibly separate).
     """
     doc_schema = get_schema(state["schema_id"])
-    field_names = [
-        name
-        for name in doc_schema.model.model_fields
-        if name not in {"line_items", "field_status", "source_note"}
-    ]
+    field_names = get_scalar_field_names(doc_schema)
     business_flags = [f for f in state.get("flags", []) if f.layer == "business"]
     retried_fields = state.get("retried_fields", set())
 

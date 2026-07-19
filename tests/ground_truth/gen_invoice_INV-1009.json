@@ -1,0 +1,21 @@
+{
+  "vendor_name": "Peak Outdoor Gear",
+  "customer_name": "Trevor Wallace",
+  "invoice_number": "INV-1009",
+  "invoice_date": "2024-02-20",
+  "due_date": "2024-03-20",
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "Hiking Backpack 40L",
+      "quantity": 1,
+      "unit_price": 129.99,
+      "amount": 129.99
+    }
+  ],
+  "subtotal": 129.99,
+  "discount": null,
+  "shipping": 9.99,
+  "tax": null,
+  "total": 139.98
+}
