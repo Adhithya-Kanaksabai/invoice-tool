@@ -5,3 +5,6 @@ google-genai
 streamlit
 python-dotenv
 pandas
+sqlalchemy
+alembic
+psycopg2-binary

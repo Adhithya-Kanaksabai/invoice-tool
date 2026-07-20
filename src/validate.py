@@ -42,6 +42,14 @@ def validation_worker(state: dict) -> WorkerResult:
     so schema_validate.validate_schema here mainly re-checks required-but-empty
     fields (its ValidationError path is defense-in-depth for callers that pass
     a raw dict directly, e.g. tests/eval.py, rather than the extract.py path).
+
+    `duplicate_checker`, if present in state, is passed through to every
+    rule the same way `seen_ids` already is — each schema's own
+    check_duplicate_against_history-shaped rule (business_validate.py /
+    business_validate_receipt.py) decides what to do with it; rules that
+    don't take it just ignore it via **_. Absent (None) means "no cross-run
+    dedup this call" — the rule functions handle that themselves, this
+    worker doesn't need to know or care.
     """
     schema_id = state["schema_id"]
     document = state["document"]
@@ -50,9 +58,10 @@ def validation_worker(state: dict) -> WorkerResult:
     _, schema_flags = validate_schema(document.model_dump(mode="json"), schema_id)
 
     seen_ids = state.get("seen_document_ids")
+    duplicate_checker = state.get("duplicate_checker")
     business_flags: list[Flag] = []
     for rule in doc_schema.business_rules:
-        business_flags.extend(rule(document, seen_ids=seen_ids))
+        business_flags.extend(rule(document, seen_ids=seen_ids, duplicate_checker=duplicate_checker))
 
     flags: list[Flag] = schema_flags + business_flags
     status = "retry" if any(f.severity == "error" for f in flags) else "ok"

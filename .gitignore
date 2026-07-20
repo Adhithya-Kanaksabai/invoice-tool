@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .env
 tests/output/
+*.db
+*.db-journal

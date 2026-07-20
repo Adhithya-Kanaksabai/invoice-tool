@@ -47,6 +47,16 @@ class DocumentSchema:
     business_rules: list[BusinessRule]
     retry_groups: dict[str, list[str]]
     required_fields: list[str]  # for schema_validate.py's empty-check, see D13
+    # Which field means "the natural id"/"the other party"/"the document date"
+    # on THIS schema — persistence.py needs this generically (it never
+    # imports Invoice/Receipt by name, same discipline as everywhere else in
+    # this registry), whereas business_validate.py's own per-schema rule
+    # functions still just hardcode their own field name directly, since
+    # that knowledge already lives there and duplicating it as a lookup
+    # wouldn't remove anything.
+    natural_id_field: str
+    party_name_field: str
+    date_field: str
 
 
 REGISTRY: dict[str, DocumentSchema] = {
@@ -56,6 +66,9 @@ REGISTRY: dict[str, DocumentSchema] = {
         business_rules=INVOICE_BUSINESS_RULES,
         retry_groups=RETRY_GROUPS,
         required_fields=["vendor_name", "customer_name", "invoice_number"],
+        natural_id_field="invoice_number",
+        party_name_field="vendor_name",
+        date_field="invoice_date",
     ),
     "receipt-v1": DocumentSchema(
         schema_id="receipt-v1",
@@ -63,6 +76,9 @@ REGISTRY: dict[str, DocumentSchema] = {
         business_rules=RECEIPT_BUSINESS_RULES,
         retry_groups=RECEIPT_RETRY_GROUPS,
         required_fields=["merchant_name"],
+        natural_id_field="transaction_id",
+        party_name_field="merchant_name",
+        date_field="transaction_date",
     ),
 }
 

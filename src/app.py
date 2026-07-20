@@ -23,6 +23,7 @@ and final_state, not re-derived guesses.
 from __future__ import annotations
 
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -30,7 +31,9 @@ import streamlit as st
 from confidence import confidence_worker
 from export import export_csv, export_json
 from extract import extraction_worker
+from ingest import compute_content_hash
 from orchestrator import run_pipeline
+from persistence import check_natural_id_exists, persist_pipeline_result
 from report import report_worker
 from retry import correction_worker
 from schema_registry import get_list_field_name, get_schema
@@ -86,12 +89,15 @@ with col_upload:
     )
 
 file_path: str | None = None
+original_filename: str | None = None  # tempfile paths are random — persistence needs the real name
 if uploaded:
     with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded.name).suffix) as tmp:
         tmp.write(uploaded.getvalue())
         file_path = tmp.name
+        original_filename = uploaded.name
 elif sample_pick != "(none — upload below)":
     file_path = str(SAMPLE_DIR / sample_pick)
+    original_filename = sample_pick
 
 
 def _render_pipeline_stages(history: list[str]) -> None:
@@ -174,9 +180,14 @@ def _render_report_group(title: str, entries: list[dict], color: str) -> None:
 
 
 if file_path:
+    started_at = datetime.utcnow()
     with st.status("Running pipeline...", expanded=False) as status:
         result = run_pipeline(
-            {"file_path": file_path, "schema_id": schema_id},
+            {
+                "file_path": file_path,
+                "schema_id": schema_id,
+                "duplicate_checker": check_natural_id_exists,
+            },
             workers=[
                 extraction_worker,
                 validation_worker,
@@ -190,12 +201,34 @@ if file_path:
             state="complete" if result.status == "ok" else "error",
         )
 
+    # Persistence is the system of record, not an optional signal — a save
+    # failure is surfaced loudly, not swallowed (see persistence.py). It
+    # doesn't block showing the result below: the extraction itself is real
+    # and already succeeded even if the DB write just failed.
+    content_hash = result.final_state.get("content_hash") or compute_content_hash(file_path)
+    try:
+        persist_pipeline_result(
+            result,
+            original_filename=original_filename or Path(file_path).name,
+            content_hash=content_hash,
+            started_at=started_at,
+        )
+    except Exception as e:
+        st.error(f"Extraction succeeded but saving this result to the database failed: {e}")
+
     if result.status == "failed":
         st.error(f"Extraction failed after retries: {result.reason}")
     else:
         document = result.final_state["document"]
         report = result.final_state["report"]
         pages = result.final_state["pages"]
+
+        if result.final_state.get("reused_from_cache"):
+            st.info(
+                "This exact file was already extracted in a prior run — reused that result "
+                "instead of calling the vision model again.",
+                icon="♻️",
+            )
 
         _render_pipeline_stages(result.history)
         st.divider()

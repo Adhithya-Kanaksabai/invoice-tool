@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import glob
+import hashlib
 import io
 import shutil
 from dataclasses import dataclass
@@ -61,6 +62,20 @@ def _find_poppler_path() -> str | None:
         )
     )
     return candidates[0] if candidates else None
+
+
+def compute_content_hash(file_path: str | Path) -> str:
+    """
+    SHA-256 of the RAW file bytes, before any PDF-to-image conversion or
+    resizing — deliberately hashes the original upload, not the derived
+    PageImage list, so two identical files hash identically regardless of
+    which page-rendering path they went through. Used by extract.py to
+    short-circuit re-extraction of a file already processed (see
+    persistence.py), independent of and stronger than natural-id dedup: it
+    catches the same file submitted twice even if extraction misread the
+    printed id, which natural-id dedup by definition cannot.
+    """
+    return hashlib.sha256(Path(file_path).read_bytes()).hexdigest()
 
 
 def load_page_images(file_path: str | Path) -> list[PageImage]:

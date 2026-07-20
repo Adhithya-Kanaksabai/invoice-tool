@@ -31,8 +31,9 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from ingest import PageImage, load_page_images
+from ingest import PageImage, compute_content_hash, load_page_images
 from orchestrator import WorkerResult
+from persistence import find_cached_document
 from schema_registry import get_schema
 
 load_dotenv()  # picks up GEMINI_API_KEY from a .env file if present, no-op otherwise
@@ -108,12 +109,45 @@ def extraction_worker(state: dict) -> WorkerResult:
     instance of whichever model is registered under schema_id — Invoice,
     Receipt, or a future schema) and state["pages"] (the source page images,
     kept for the UI and for retry.py to reuse without re-ingesting).
+
+    Content-hash cache check: if this exact file (by raw-byte SHA-256, see
+    ingest.py::compute_content_hash) was already extracted in a prior run,
+    reuse that stored result instead of calling Gemini again — a real
+    cost/quota saving (this project has already hit a free-tier quota wall
+    once). Skipped when state["skip_cache"] is set — eval.py sets this,
+    since its whole point is to measure LIVE extraction accuracy against
+    ground truth on every run; silently replaying a stale cached result
+    would freeze the eval numbers and defeat the tool's own purpose. The
+    cache lookup itself degrades gracefully (see persistence.py) — a DB
+    hiccup here just means "extract normally," never a blocked pipeline.
     """
     schema_id = state["schema_id"]
     doc_schema = get_schema(schema_id)
     prompt = _build_prompt(schema_id)
 
     pages = state.get("pages") or load_page_images(state["file_path"])
+    content_hash = state.get("content_hash")
+    if content_hash is None and "file_path" in state:
+        content_hash = compute_content_hash(state["file_path"])
+
+    if content_hash and not state.get("skip_cache"):
+        cached_data = find_cached_document(content_hash)
+        if cached_data is not None:
+            try:
+                document = doc_schema.model.model_validate(cached_data)
+                return WorkerResult(
+                    status="ok",
+                    state={
+                        **state,
+                        "pages": pages,
+                        "document": document,
+                        "content_hash": content_hash,
+                        "reused_from_cache": True,
+                    },
+                )
+            except Exception:
+                pass  # stored data no longer validates (e.g. schema changed since) — extract for real
+
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
     last_error: Exception | None = None
@@ -124,7 +158,7 @@ def extraction_worker(state: dict) -> WorkerResult:
             document = doc_schema.model.model_validate(raw)
             return WorkerResult(
                 status="ok",
-                state={**state, "pages": pages, "document": document},
+                state={**state, "pages": pages, "document": document, "content_hash": content_hash},
             )
         except Exception as e:  # API error, bad JSON, or ValidationError — all hard failures here
             last_error = e
@@ -133,6 +167,6 @@ def extraction_worker(state: dict) -> WorkerResult:
 
     return WorkerResult(
         status="failed",
-        state={**state, "pages": pages, "extraction_failed": True},
+        state={**state, "pages": pages, "extraction_failed": True, "content_hash": content_hash},
         reason=f"extraction failed after {MAX_ATTEMPTS} attempts: {last_error}",
     )
