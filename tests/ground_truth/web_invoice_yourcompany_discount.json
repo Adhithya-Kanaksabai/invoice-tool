@@ -1,0 +1,17 @@
+{
+  "vendor_name": "Your Company",
+  "customer_name": "Business Name",
+  "invoice_number": "000383",
+  "invoice_date": "2011-05-12",
+  "due_date": "2011-05-12",
+  "currency": "USD",
+  "line_items": [
+    {"description": "One of a kind product description", "quantity": 1, "unit_price": 100.00, "amount": 100.00},
+    {"description": "One of a kind product another description", "quantity": 1, "unit_price": 100.00, "amount": 100.00}
+  ],
+  "subtotal": 200.00,
+  "discount": 20.00,
+  "shipping": null,
+  "tax": null,
+  "total": 180.00
+}

@@ -1,0 +1,33 @@
+{
+  "vendor_name": "Copperfield Print Works",
+  "customer_name": "Nathan Brooks",
+  "invoice_number": "INV-2005",
+  "invoice_date": "2024-04-05",
+  "due_date": "2024-05-05",
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "Poster A2 Gloss",
+      "quantity": 25,
+      "unit_price": 4.6,
+      "amount": 115.0
+    },
+    {
+      "description": "Vinyl Banner 2m",
+      "quantity": 3,
+      "unit_price": 38.0,
+      "amount": 114.0
+    },
+    {
+      "description": "Lamination",
+      "quantity": 25,
+      "unit_price": 1.2,
+      "amount": 30.0
+    }
+  ],
+  "subtotal": 259.0,
+  "discount": null,
+  "shipping": 18.0,
+  "tax": 22.16,
+  "total": 299.16
+}

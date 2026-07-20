@@ -1,0 +1,15 @@
+{
+  "merchant_name": "Russell's Restaurant",
+  "transaction_id": "4488",
+  "transaction_date": "2014-10-08",
+  "payment_method": null,
+  "currency": "USD",
+  "items": [
+    {"description": "Latte (No Flavor)", "quantity": 1, "unit_price": 1.75, "amount": 1.75},
+    {"description": "Salmon", "quantity": 1, "unit_price": 7.95, "amount": 7.95}
+  ],
+  "subtotal": 9.70,
+  "tax": null,
+  "tip": null,
+  "total": 9.70
+}

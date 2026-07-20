@@ -1,0 +1,27 @@
+{
+  "vendor_name": "Delft Ceramics BV",
+  "customer_name": "Sofie Visser",
+  "invoice_number": "INV-2002",
+  "invoice_date": "2024-04-18",
+  "due_date": "2024-05-18",
+  "currency": "EUR",
+  "line_items": [
+    {
+      "description": "Glazed Tiles (m2)",
+      "quantity": 15,
+      "unit_price": 42.0,
+      "amount": 630.0
+    },
+    {
+      "description": "Grout 5kg",
+      "quantity": 6,
+      "unit_price": 9.5,
+      "amount": 57.0
+    }
+  ],
+  "subtotal": 687.0,
+  "discount": 34.35,
+  "shipping": 22.0,
+  "tax": 137.4,
+  "total": 812.05
+}

@@ -177,7 +177,12 @@ if file_path:
     with st.status("Running pipeline...", expanded=False) as status:
         result = run_pipeline(
             {"file_path": file_path, "schema_id": schema_id},
-            workers=[extraction_worker, validation_worker, confidence_worker, report_worker],
+            workers=[
+                extraction_worker,
+                validation_worker,
+                confidence_worker,
+                report_worker,
+            ],
             correction_worker=correction_worker,
         )
         status.update(

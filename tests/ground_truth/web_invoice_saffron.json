@@ -1,0 +1,18 @@
+{
+  "vendor_name": "Saffron Design",
+  "customer_name": "Kavindra Mannan",
+  "invoice_number": "IN-001",
+  "invoice_date": "2019-01-29",
+  "due_date": "2019-04-26",
+  "currency": "INR",
+  "line_items": [
+    {"description": "Frontend design restructure", "quantity": 1, "unit_price": 9999.00, "amount": 9999.00},
+    {"description": "Custom icon package", "quantity": 2, "unit_price": 975.00, "amount": 1950.00},
+    {"description": "Gandhi mouse pad", "quantity": 3, "unit_price": 99.00, "amount": 297.00}
+  ],
+  "subtotal": 12246.00,
+  "discount": null,
+  "shipping": null,
+  "tax": 1469.52,
+  "total": 13715.52
+}

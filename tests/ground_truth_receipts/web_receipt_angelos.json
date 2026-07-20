@@ -1,0 +1,16 @@
+{
+  "merchant_name": "Angelo's Pizza Restaurant",
+  "transaction_id": "4876",
+  "transaction_date": "2017-07-10",
+  "payment_method": null,
+  "currency": "USD",
+  "items": [
+    {"description": "Sprite", "quantity": 1, "unit_price": 2.55, "amount": 2.55},
+    {"description": "Chicken Caesar Salad", "quantity": 1, "unit_price": 8.95, "amount": 8.95},
+    {"description": "Chef's Special (Soup of Day)", "quantity": 1, "unit_price": 19.95, "amount": 19.95}
+  ],
+  "subtotal": 31.45,
+  "tax": 1.89,
+  "tip": null,
+  "total": 33.34
+}
