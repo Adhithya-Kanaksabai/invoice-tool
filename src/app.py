@@ -41,6 +41,47 @@ from validate import validation_worker
 
 st.set_page_config(page_title="Invoice Intelligence Tool", page_icon="🧾", layout="wide")
 
+# Flat, restrained styling pass (Claude design system direction: flat surfaces,
+# hairline borders, no shadows/gradients, 12px card radius, muted secondary
+# text) applied over Streamlit's own components via CSS, not a framework swap
+# — see D8, this stays Streamlit. Conservative selectors (data-testid, which
+# is fairly stable across Streamlit versions) so a selector miss degrades to
+# "no visual change" rather than a broken layout.
+st.markdown(
+    """
+    <style>
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 12px !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stMetric"] {
+        background: rgba(127, 127, 127, 0.06);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 13px;
+        opacity: 0.7;
+    }
+    span[data-testid="stBadge"] {
+        border-radius: 999px !important;
+        font-weight: 500;
+        box-shadow: none !important;
+    }
+    div[data-testid="stExpander"] details {
+        border-radius: 8px;
+        box-shadow: none !important;
+    }
+    button[data-testid="stBaseButton-secondary"],
+    button[data-testid="stBaseButton-secondaryFormSubmit"] {
+        border-radius: 8px !important;
+        box-shadow: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 DOCUMENT_TYPES = {
     "Invoice": "invoice-v1",
     "Receipt": "receipt-v1",
