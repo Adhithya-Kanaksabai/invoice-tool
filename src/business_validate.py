@@ -102,6 +102,35 @@ def check_duplicate_invoice_number(
     return []
 
 
+def check_duplicate_against_history(
+    invoice: Invoice, duplicate_checker=None, **_
+) -> list[Flag]:
+    """
+    Duplicate invoice number against PRIOR runs, not just the current batch —
+    the cross-run upgrade check_duplicate_invoice_number above can't do on
+    its own, since its `seen_ids` set only lives for one pipeline invocation.
+
+    `duplicate_checker` is injected: (schema_id, natural_id) -> bool. Kept
+    optional (None = skip this check entirely) so this rule function stays a
+    pure, DB-free callable like every other rule in this module — tests pass
+    no checker or a fake one; validate.py wires persistence.py's real
+    DB-backed check_natural_id_exists in production. Same schema-agnostic
+    kwarg-injection pattern seen_ids already uses.
+    """
+    if duplicate_checker is None:
+        return []
+    if duplicate_checker("invoice-v1", invoice.invoice_number):
+        return [
+            Flag(
+                field="invoice_number",
+                reason=f"invoice number {invoice.invoice_number} already exists in a prior run",
+                layer="business",
+                severity="warning",
+            )
+        ]
+    return []
+
+
 # The invoice schema's full business rule set, in the shape schema_registry.py
 # expects: list[Callable[..., list[Flag]]]. Order doesn't matter — all rules
 # run and their flags are concatenated.
@@ -110,6 +139,7 @@ INVOICE_BUSINESS_RULES = [
     check_total_arithmetic,
     check_date_order,
     check_duplicate_invoice_number,
+    check_duplicate_against_history,
 ]
 
 

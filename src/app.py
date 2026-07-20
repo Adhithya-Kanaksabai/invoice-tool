@@ -23,6 +23,7 @@ and final_state, not re-derived guesses.
 from __future__ import annotations
 
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -30,13 +31,57 @@ import streamlit as st
 from confidence import confidence_worker
 from export import export_csv, export_json
 from extract import extraction_worker
+from ingest import compute_content_hash
 from orchestrator import run_pipeline
+from persistence import check_natural_id_exists, persist_pipeline_result
 from report import report_worker
 from retry import correction_worker
 from schema_registry import get_list_field_name, get_schema
 from validate import validation_worker
 
 st.set_page_config(page_title="Invoice Intelligence Tool", page_icon="🧾", layout="wide")
+
+# Flat, restrained styling pass (Claude design system direction: flat surfaces,
+# hairline borders, no shadows/gradients, 12px card radius, muted secondary
+# text) applied over Streamlit's own components via CSS, not a framework swap
+# — see D8, this stays Streamlit. Conservative selectors (data-testid, which
+# is fairly stable across Streamlit versions) so a selector miss degrades to
+# "no visual change" rather than a broken layout.
+st.markdown(
+    """
+    <style>
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 12px !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stMetric"] {
+        background: rgba(127, 127, 127, 0.12);
+        border: 1px solid rgba(127, 127, 127, 0.18);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 13px;
+        opacity: 0.7;
+    }
+    span[data-testid="stBadge"] {
+        border-radius: 999px !important;
+        font-weight: 500;
+        box-shadow: none !important;
+    }
+    div[data-testid="stExpander"] details {
+        border-radius: 8px;
+        box-shadow: none !important;
+    }
+    button[data-testid="stBaseButton-secondary"],
+    button[data-testid="stBaseButton-secondaryFormSubmit"] {
+        border-radius: 8px !important;
+        box-shadow: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 DOCUMENT_TYPES = {
     "Invoice": "invoice-v1",
@@ -80,18 +125,27 @@ with col_controls:
         sample_choices += sorted(p.name for p in SAMPLE_DIR.glob("*.pdf"))
     sample_pick = st.selectbox("Or try a sample invoice", sample_choices)
 
+    force_rerun = st.checkbox(
+        "Force re-extraction (skip cache)",
+        help="Ignore any cached result for this exact file and call the vision model again — "
+        "useful when testing a prompt/schema change against a file you've already run.",
+    )
+
 with col_upload:
     uploaded = st.file_uploader(
         f"Upload a {doc_type_label.lower()}", type=["pdf", "jpg", "jpeg", "png", "webp"]
     )
 
 file_path: str | None = None
+original_filename: str | None = None  # tempfile paths are random — persistence needs the real name
 if uploaded:
     with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded.name).suffix) as tmp:
         tmp.write(uploaded.getvalue())
         file_path = tmp.name
+        original_filename = uploaded.name
 elif sample_pick != "(none — upload below)":
     file_path = str(SAMPLE_DIR / sample_pick)
+    original_filename = sample_pick
 
 
 def _render_pipeline_stages(history: list[str]) -> None:
@@ -123,7 +177,14 @@ def _render_pipeline_stages(history: list[str]) -> None:
 def _render_agentic_panel(final_state: dict) -> None:
     st.subheader("Agentic Correction Worker")
     retried_fields = final_state.get("retried_fields")
+
     if not retried_fields:
+        if final_state.get("correction_attempted_but_failed"):
+            st.badge("Attempted — could not resolve, original values kept", icon="⚠️", color="orange")
+            reason = final_state.get("correction_failure_reason")
+            if reason:
+                st.caption(reason)
+            return
         st.badge("Not needed — passed validation on the first pass", icon="✅", color="green")
         return
 
@@ -174,9 +235,15 @@ def _render_report_group(title: str, entries: list[dict], color: str) -> None:
 
 
 if file_path:
+    started_at = datetime.utcnow()
     with st.status("Running pipeline...", expanded=False) as status:
         result = run_pipeline(
-            {"file_path": file_path, "schema_id": schema_id},
+            {
+                "file_path": file_path,
+                "schema_id": schema_id,
+                "duplicate_checker": check_natural_id_exists,
+                "skip_cache": force_rerun,
+            },
             workers=[
                 extraction_worker,
                 validation_worker,
@@ -190,12 +257,34 @@ if file_path:
             state="complete" if result.status == "ok" else "error",
         )
 
+    # Persistence is the system of record, not an optional signal — a save
+    # failure is surfaced loudly, not swallowed (see persistence.py). It
+    # doesn't block showing the result below: the extraction itself is real
+    # and already succeeded even if the DB write just failed.
+    content_hash = result.final_state.get("content_hash") or compute_content_hash(file_path)
+    try:
+        persist_pipeline_result(
+            result,
+            original_filename=original_filename or Path(file_path).name,
+            content_hash=content_hash,
+            started_at=started_at,
+        )
+    except Exception as e:
+        st.error(f"Extraction succeeded but saving this result to the database failed: {e}")
+
     if result.status == "failed":
-        st.error(f"Extraction failed after retries: {result.reason}")
+        st.error(result.reason or "Extraction failed.")
     else:
         document = result.final_state["document"]
         report = result.final_state["report"]
         pages = result.final_state["pages"]
+
+        if result.final_state.get("reused_from_cache"):
+            st.info(
+                "This exact file was already extracted in a prior run — reused that result "
+                "instead of calling the vision model again.",
+                icon="♻️",
+            )
 
         _render_pipeline_stages(result.history)
         st.divider()
@@ -213,6 +302,7 @@ if file_path:
             m1.metric("Errors", len(report["errors"]))
             m2.metric("Warnings", len(report["warnings"]))
             m3.metric("Passed", len(report["pass"]))
+            st.caption("Only errors trigger automatic correction — warnings are informational.")
 
             _render_report_group("Errors", report["errors"], "red")
             _render_report_group("Warnings", report["warnings"], "orange")

@@ -13,6 +13,12 @@ status is "retry" if any error-severity flag exists (the orchestrator hands
 off to the Correction Worker per design.md's orchestrator/worker contract),
 "ok" otherwise. Warning-severity flags don't trigger a retry — see FR6/D5,
 warnings feed confidence scoring instead.
+
+Before any of that: a document-level gate. If extract.py's model judged the
+uploaded document isn't even the right document type (document_type_match ==
+False), this worker short-circuits with status="failed" immediately —
+schema/business validation and the correction loop never run, since
+re-extracting field values makes no sense when the document itself is wrong.
 """
 
 from __future__ import annotations
@@ -42,17 +48,37 @@ def validation_worker(state: dict) -> WorkerResult:
     so schema_validate.validate_schema here mainly re-checks required-but-empty
     fields (its ValidationError path is defense-in-depth for callers that pass
     a raw dict directly, e.g. tests/eval.py, rather than the extract.py path).
+
+    `duplicate_checker`, if present in state, is passed through to every
+    rule the same way `seen_ids` already is — each schema's own
+    check_duplicate_against_history-shaped rule (business_validate.py /
+    business_validate_receipt.py) decides what to do with it; rules that
+    don't take it just ignore it via **_. Absent (None) means "no cross-run
+    dedup this call" — the rule functions handle that themselves, this
+    worker doesn't need to know or care.
     """
     schema_id = state["schema_id"]
     document = state["document"]
     doc_schema = get_schema(schema_id)
 
+    if getattr(document, "document_type_match", True) is False:
+        note = getattr(document, "document_type_note", None)
+        reason = f"This document doesn't look like a {doc_schema.display_name}."
+        if note:
+            reason += f" It looks more like: {note}."
+        return WorkerResult(
+            status="failed",
+            state={**state, "document_type_mismatch": True},
+            reason=reason,
+        )
+
     _, schema_flags = validate_schema(document.model_dump(mode="json"), schema_id)
 
     seen_ids = state.get("seen_document_ids")
+    duplicate_checker = state.get("duplicate_checker")
     business_flags: list[Flag] = []
     for rule in doc_schema.business_rules:
-        business_flags.extend(rule(document, seen_ids=seen_ids))
+        business_flags.extend(rule(document, seen_ids=seen_ids, duplicate_checker=duplicate_checker))
 
     flags: list[Flag] = schema_flags + business_flags
     status = "retry" if any(f.severity == "error" for f in flags) else "ok"

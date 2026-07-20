@@ -69,10 +69,33 @@ def check_receipt_duplicate_transaction_id(
     return []
 
 
+def check_receipt_duplicate_against_history(
+    receipt: Receipt, duplicate_checker=None, **_
+) -> list[Flag]:
+    """
+    Cross-run duplicate transaction ID — same shape and reasoning as
+    business_validate.py::check_duplicate_against_history, kept independent
+    per D15 rather than shared/imported across schemas.
+    """
+    if duplicate_checker is None or not receipt.transaction_id:
+        return []
+    if duplicate_checker("receipt-v1", receipt.transaction_id):
+        return [
+            Flag(
+                field="transaction_id",
+                reason=f"transaction id {receipt.transaction_id} already exists in a prior run",
+                layer="business",
+                severity="warning",
+            )
+        ]
+    return []
+
+
 RECEIPT_BUSINESS_RULES = [
     check_receipt_items_sum,
     check_receipt_total_arithmetic,
     check_receipt_duplicate_transaction_id,
+    check_receipt_duplicate_against_history,
 ]
 
 

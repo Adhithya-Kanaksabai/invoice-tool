@@ -19,11 +19,14 @@ extraction success rate.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 from confidence import confidence_worker
 from extract import extraction_worker
+from ingest import compute_content_hash
 from orchestrator import run_pipeline
+from persistence import check_natural_id_exists, persist_pipeline_result
 from report import report_worker
 from retry import correction_worker
 from schema_registry import get_list_field_name, get_schema
@@ -141,7 +144,16 @@ def run_eval() -> dict:
                 "file_path": str(sample_path),
                 "schema_id": schema_id,
                 "seen_document_ids": seen_ids,
+                "duplicate_checker": check_natural_id_exists,
+                # eval.py's whole point is measuring LIVE extraction accuracy
+                # against ground truth on every run — the same sample files
+                # get re-extracted every time this is run. Without this flag,
+                # the content-hash cache (extract.py) would silently replay
+                # a stale result from a prior eval run instead of actually
+                # calling Gemini, freezing the eval numbers. See extract.py.
+                "skip_cache": True,
             }
+            started_at = datetime.utcnow()
             try:
                 result = run_pipeline(
                     initial_state,
@@ -163,6 +175,23 @@ def run_eval() -> dict:
                     {"file": sample_path.name, "extraction_failed": True, "error": str(e)}
                 )
                 continue
+
+            # Persist regardless of outcome (a failed extraction is still a
+            # real, queryable fact) — but a persistence hiccup on ONE
+            # document must not take down the whole eval run either, same
+            # D9 isolation as the exception guard above. Visibly recorded in
+            # the results either way, never silently swallowed.
+            try:
+                persist_pipeline_result(
+                    result,
+                    original_filename=sample_path.name,
+                    content_hash=compute_content_hash(sample_path),
+                    started_at=started_at,
+                )
+            except Exception as e:
+                per_invoice_results.append(
+                    {"file": sample_path.name, "persistence_failed": str(e)}
+                )
 
             if result.status == "failed":
                 per_invoice_results.append(
