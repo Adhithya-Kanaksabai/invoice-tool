@@ -242,7 +242,20 @@ def correction_worker(state: dict) -> WorkerResult:
         # error flags, and since orchestrator.py's max_correction_rounds=1
         # caps how many times this worker runs per pipeline pass, the result
         # is "unresolved for human review," not an infinite loop (per D6).
-        return WorkerResult(status="ok", state=state)
+        # Tag the attempt in state (distinct from retried_fields, which means
+        # "succeeded") so app.py can tell "never needed" apart from "tried
+        # and gave up" — see D6-adjacent UI bug found via manual testing.
+        return WorkerResult(
+            status="ok",
+            state={
+                **state,
+                "correction_attempted_but_failed": True,
+                "correction_failure_reason": (
+                    "neither tool-calling nor the deterministic fallback produced a usable "
+                    "correction"
+                ),
+            },
+        )
 
     merged_raw = document.model_dump(mode="json")
     for field in retry_fields:
@@ -256,10 +269,17 @@ def correction_worker(state: dict) -> WorkerResult:
     except Exception as e:
         # Corrected values didn't even type-check after coercion — same
         # "leave as-is, surface as unresolved" reasoning as above, but keep
-        # the reason visible for debugging rather than swallowing it.
+        # the reason visible for debugging rather than swallowing it. Also
+        # tagged in state (not just WorkerResult.reason, which the
+        # orchestrator only surfaces for status="failed" — this is "ok" so
+        # it would otherwise be silently dropped).
         return WorkerResult(
             status="ok",
-            state=state,
+            state={
+                **state,
+                "correction_attempted_but_failed": True,
+                "correction_failure_reason": f"correction produced invalid data, kept original: {e}",
+            },
             reason=f"correction produced invalid data, kept original: {e}",
         )
 

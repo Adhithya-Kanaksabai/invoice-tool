@@ -44,6 +44,15 @@ affected fields → re-validate → build a PASS/Warnings/Errors report → expo
 show it all in a Streamlit UI with the source image next to the output, a live pipeline-stage
 tracker, and an explicit panel showing whether/how the agentic Correction Worker fired.
 
+Underneath that, every run is now persisted to a real database (SQLAlchemy models, Alembic
+migrations) — not just shown once and discarded. That backs two real features, not just a log:
+a content-hash cache (re-uploading the exact same file bytes skips a fresh Gemini call entirely —
+a genuine cost/quota saving, verified live: cache hit in well under a second vs. several seconds
+for a real extraction), and cross-run duplicate detection (an invoice number that already exists
+from a *previous* session, not just earlier in the same batch). Persistence failures are
+surfaced loudly, never swallowed — a save failing doesn't block showing the result that already
+succeeded, but it's not silently dropped either.
+
 ## Key decisions and the reasoning
 
 - **Validation is two separate layers, not one function.** Schema validation asks "is this
@@ -194,6 +203,63 @@ isn't. A better independent signal for a future round: sample the vision model i
 treat disagreement across samples as the signal, instead of pairing it with a strictly weaker
 non-independent-enough reader.
 
+**Manual adversarial testing (uploading things that aren't invoices at all) surfaced five real
+bugs the automated eval set never would have.** The 29-document eval set is all plausible
+invoices/receipts by construction — it can't test what happens when a user uploads something
+completely wrong. Doing that by hand found:
+
+1. **A raw Pydantic `ValidationError` was shown straight to the user.** Uploading an unrelated
+   PDF (a resume) made extraction fail after 3 retries, and the failure message was a literal
+   multi-line dump: `"6 validation errors for Invoice / vendor_name / Input should be a valid
+   string [type=string_type...]"`. The exception was caught generically (`except Exception as e`)
+   and stringified directly into the UI with zero translation. Fixed by parsing which fields were
+   missing/malformed out of the `ValidationError` and building one short sentence instead — e.g.
+   `"Could not extract a valid Invoice from this document — the model's output was missing or
+   malformed for: customer_name."` Verified live: same resume-shaped test file now produces a
+   clean one-line message.
+
+2. **No check that the uploaded document is even the right document type.** Uploaded a CBSE
+   Class XII marksheet with "Invoice" selected — Gemini hallucinated a field mapping (school name
+   into `vendor_name`, etc.), it happened to satisfy Pydantic's type checks, and the pipeline
+   reported a clean success with zero warnings. Root cause: the extraction prompt never told the
+   model what document type to expect, and nothing downstream checked plausibility, only
+   structural validity. Fixed by adding a `document_type_match` / `document_type_note` pair the
+   model sets itself (the same "explicit uncertainty signal" pattern `field_status` already uses,
+   just at the document level instead of per-field), checked by `validate.py` *before* any
+   schema/business validation runs — a document-type mismatch short-circuits straight to a clean
+   failure instead of running business rules on data that shouldn't exist. Verified live: the same
+   marksheet-shaped test image now fails cleanly instead of reporting fabricated success.
+
+3. **A genuine invoice tripped a real, previously-undetected line-item bug.** A real invoice with
+   both a tax-exclusive and tax-inclusive amount column per line item got its line items extracted
+   from the *wrong* column — the model used the VAT-inclusive "Total amount" instead of the
+   VAT-exclusive "Net amount," so line items summed to the grand total instead of the subtotal
+   (off by exactly the VAT amount). Root cause: `LineItem.amount`'s docstring said only "quantity
+   × unit_price, as printed on the invoice" — no guidance on *which* printed column to use when an
+   invoice shows more than one. Fixed by making both the schema comment and the extraction prompt
+   explicit: `amount` must be the pre-tax/net figure, consistent with how `subtotal` and the
+   arithmetic check already assume pre-tax math.
+
+4. **The Agentic Correction Worker panel lied about whether it ran.** A genuinely hard receipt
+   (a deliberately garbled AI-generated test image) triggered a real validation error, and the
+   Pipeline Stages row correctly showed "🤖 Agentic correction" ran — but the Correction Worker
+   panel below it said "Not needed — passed validation on the first pass," which was false; it
+   *had* run and simply couldn't produce a usable correction (neither the tool-calling loop nor
+   the deterministic fallback converged). Root cause: `retry.py`'s give-up path returned the
+   unchanged state with no signal that an attempt had happened at all, so the UI's only check
+   (`final_state.get("retried_fields")`, which only gets set on *success*) couldn't tell "never
+   needed" apart from "tried and gave up." Fixed by tagging
+   `correction_attempted_but_failed` + a reason in state on both give-up paths, and giving the UI
+   a third state — "Attempted — could not resolve, original values kept" — instead of collapsing
+   two different outcomes into the same misleading badge.
+
+5. **The content-hash cache blocked re-testing the exact fixes above.** Once #1–#2 were fixed and
+   re-uploading the *same* resume/marksheet files (needed to verify the fix against the exact
+   same input), the cache correctly reused the pre-fix cached result instead of calling the model
+   again — correct behavior for a real user, actively unhelpful for iterating on a fix. Added a
+   "Force re-extraction (skip cache)" checkbox in the UI, wired to the `skip_cache` state key
+   `eval.py` already used internally — no new mechanism, just exposing an existing one.
+
 ## Evaluation results
 
 Test set: **29 hand-verified documents** (24 invoices, 5 receipts), up from the original 5 — now
@@ -273,6 +339,16 @@ A subtotal that doesn't match its line items, or a total that doesn't match subt
 — both get caught and flagged automatically, and specifically re-examined (as a dependency group,
 not just the one named field) instead of silently accepted or requiring a full manual re-check.
 
+**How did you test failure cases the eval set couldn't catch?** By hand — deliberately uploading
+things that aren't invoices at all (a resume, a school marksheet) and a genuinely hard-to-read
+receipt. That single session found five real bugs a clean 29-document eval set structurally can't
+surface: a raw Pydantic exception dumped straight to the UI, zero document-type plausibility
+checking (a marksheet got hallucination-mapped into a "successful" invoice), a real line-item
+column-selection bug on an actual invoice, and a UI panel that misreported whether the agentic
+correction step had actually run. The eval set proves accuracy on documents that are the right
+shape; it says nothing about what happens when they're not — that needs someone actually trying to
+break it.
+
 **You built an OCR cross-check — where is it?** Removed it. I tested it against real diverse
 documents with a dedicated tuning script rather than assuming it worked, and it had a 0% catch
 rate on real errors across 308 field observations, plus a specific false-reassurance failure mode
@@ -284,4 +360,8 @@ photos isn't) is worth more than the feature would have been.
 
 ---
 
-_Last updated: 2026-07-20 at commit a20a263 (uncommitted local changes on top — see git status)._
+_Last updated: 2026-07-21 — includes the SQLAlchemy/Alembic persistence layer (content-hash cache,
+cross-run duplicate detection), a Streamlit styling pass, and five bugs found via manual
+adversarial testing (graceful failure messages, document-type mismatch detection, a real
+line-item column bug, and an Agentic Correction Worker UI mislabel), all committed together in
+this push._

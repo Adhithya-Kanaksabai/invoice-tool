@@ -39,7 +39,10 @@ class LineItem(BaseModel):
     description: str
     quantity: float
     unit_price: float
-    amount: float  # quantity * unit_price, as printed on the invoice
+    amount: float  # quantity * unit_price, PRE-TAX / net of any per-line VAT — must be
+    # consistent with subtotal, which is always the pre-tax sum (see
+    # business_validate.py::check_line_items_sum). If the invoice prints both a net
+    # and a tax-inclusive column per line, use the net one.
 
 
 class Invoice(BaseModel):
@@ -76,6 +79,14 @@ class Invoice(BaseModel):
     # pixel bounding boxes. Deliberately the cheap version of grounding —
     # see design.md D14 for why bbox-level grounding is out of scope.
     source_note: dict[str, str] = {}
+
+    # Document-level plausibility signal — DIFFERENT from field_status, which
+    # is per-field. This is the model's own judgment of whether the uploaded
+    # document is even the right document type at all (e.g. a marksheet
+    # uploaded as an Invoice). Defaults to True so old cached extractions
+    # (from before this field existed) backfill cleanly on model_validate().
+    document_type_match: bool = True
+    document_type_note: str | None = None  # what it looks like instead, if not a match
 
 
 # NOTE: no field_confidence here. Confidence is computed downstream in
@@ -125,3 +136,5 @@ class Receipt(BaseModel):
 
     field_status: dict[str, FieldStatus] = {}
     source_note: dict[str, str] = {}
+    document_type_match: bool = True
+    document_type_note: str | None = None

@@ -30,6 +30,7 @@ import time
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from pydantic import ValidationError
 
 from ingest import PageImage, compute_content_hash, load_page_images
 from orchestrator import WorkerResult
@@ -44,11 +45,23 @@ BACKOFF_SECONDS = 2.0
 
 EXTRACTION_INSTRUCTIONS = """\
 You are extracting structured data from a scanned document (one or more page
-images are attached) into JSON that validates against the JSON Schema below.
+images are attached). The document is expected to be a {document_type_label}.
+Extract into JSON that validates against the JSON Schema below.
+
+First, judge whether the document actually IS a {document_type_label} at all
+(not just whether individual fields are readable). Set the top-level
+`document_type_match` field to true if it plausibly is, or false if it's
+clearly something else (a resume, a letter, an unrelated form, a school
+marksheet, etc.). If false, also set `document_type_note` to a short
+description of what it actually looks like instead. When
+`document_type_match` is false, do NOT force-map unrelated content onto the
+schema's fields — use `field_status` "missing" or "ambiguous" for fields that
+don't genuinely apply rather than inventing a plausible-looking value.
 
 For every scalar field the schema defines under "properties" (i.e. not
-line_items, not field_status, not source_note themselves), also populate two
-side maps, keyed by that field's name:
+line_items, not field_status, not source_note, not document_type_match, not
+document_type_note themselves), also populate two side maps, keyed by that
+field's name:
 
 - `field_status`: one of "extracted", "missing", "ambiguous", "unreadable".
   Use "missing" only if the field is genuinely absent from the document. Use
@@ -58,6 +71,12 @@ side maps, keyed by that field's name:
   silently instead of using these statuses when uncertain.
 - `source_note`: a short text description of where on the page you read the
   value (e.g. "table row 3", "top-right header block").
+
+If a line-item table shows multiple amount-like columns per row (e.g. a
+tax-exclusive "net amount" AND a tax-inclusive "total amount"), each line
+item's `amount` must be the pre-tax / net figure, NOT the tax-inclusive
+total — it must be consistent with how the document's own subtotal is
+computed.
 
 Do not invent a confidence number — none is requested.
 Respond with ONLY the raw JSON object. No markdown code fences, no commentary.
@@ -70,7 +89,9 @@ JSON Schema:
 def _build_prompt(schema_id: str) -> str:
     doc_schema = get_schema(schema_id)
     schema_json = json.dumps(doc_schema.model.model_json_schema(), indent=2)
-    return EXTRACTION_INSTRUCTIONS.format(schema_json=schema_json)
+    return EXTRACTION_INSTRUCTIONS.format(
+        schema_json=schema_json, document_type_label=doc_schema.display_name
+    )
 
 
 def _image_parts(pages: list[PageImage]) -> list[types.Part]:
@@ -89,6 +110,27 @@ def _strip_code_fences(text: str) -> str:
             lines = lines[:-1]
         text = "\n".join(lines)
     return text.strip()
+
+
+def _describe_last_error(error: Exception | None) -> str:
+    """
+    Turn a hard-failure exception into a short, user-presentable phrase —
+    never let a raw pydantic.ValidationError's multi-line dump reach the UI.
+    Mirrors schema_validate.py's "parse the ValidationError into something
+    renderable" pattern, but for the total-failure case rather than a
+    per-field flag.
+    """
+    if error is None:
+        return "unknown error"
+    if isinstance(error, ValidationError):
+        fields = sorted({".".join(str(p) for p in e["loc"]) for e in error.errors()})
+        preview = ", ".join(fields[:5])
+        if len(fields) > 5:
+            preview += f", and {len(fields) - 5} more"
+        return f"the model's output was missing or malformed for: {preview}"
+    if isinstance(error, json.JSONDecodeError):
+        return "the model's response wasn't valid JSON"
+    return str(error)
 
 
 def _call_gemini(client: genai.Client, prompt: str, pages: list[PageImage]) -> str:
@@ -168,5 +210,10 @@ def extraction_worker(state: dict) -> WorkerResult:
     return WorkerResult(
         status="failed",
         state={**state, "pages": pages, "extraction_failed": True, "content_hash": content_hash},
-        reason=f"extraction failed after {MAX_ATTEMPTS} attempts: {last_error}",
+        reason=(
+            f"Could not extract a valid {doc_schema.display_name} from this document after "
+            f"{MAX_ATTEMPTS} attempts — {_describe_last_error(last_error)}. This usually means "
+            "the uploaded file doesn't match the selected document type, or key fields are "
+            "unreadable."
+        ),
     )

@@ -36,8 +36,14 @@ from schema import Flag, Invoice, Receipt
 BusinessRule = Callable[..., list[Flag]]
 
 # Same on every registered schema's model, regardless of document type — the
-# shared FieldStatus/source_note pattern, not per-document-type fields.
-_ALWAYS_EXCLUDED_FIELDS = {"field_status", "source_note"}
+# shared FieldStatus/source_note/document_type_match pattern, not
+# per-document-type fields.
+_ALWAYS_EXCLUDED_FIELDS = {
+    "field_status",
+    "source_note",
+    "document_type_match",
+    "document_type_note",
+}
 
 
 @dataclass
@@ -47,6 +53,13 @@ class DocumentSchema:
     business_rules: list[BusinessRule]
     retry_groups: dict[str, list[str]]
     required_fields: list[str]  # for schema_validate.py's empty-check, see D13
+    # Human-readable label used in the extraction prompt and in user-facing
+    # failure messages (document-type-mismatch, hard extraction failure).
+    # Must stay in sync with app.py's DOCUMENT_TYPES dict keys — kept as a
+    # plain manual duplication rather than a shared constant, since unifying
+    # a UI-facing dict and a worker-facing dataclass field for two entries
+    # isn't worth the abstraction.
+    display_name: str
     # Which field means "the natural id"/"the other party"/"the document date"
     # on THIS schema — persistence.py needs this generically (it never
     # imports Invoice/Receipt by name, same discipline as everywhere else in
@@ -69,6 +82,7 @@ REGISTRY: dict[str, DocumentSchema] = {
         natural_id_field="invoice_number",
         party_name_field="vendor_name",
         date_field="invoice_date",
+        display_name="Invoice",
     ),
     "receipt-v1": DocumentSchema(
         schema_id="receipt-v1",
@@ -79,6 +93,7 @@ REGISTRY: dict[str, DocumentSchema] = {
         natural_id_field="transaction_id",
         party_name_field="merchant_name",
         date_field="transaction_date",
+        display_name="Receipt",
     ),
 }
 

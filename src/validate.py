@@ -13,6 +13,12 @@ status is "retry" if any error-severity flag exists (the orchestrator hands
 off to the Correction Worker per design.md's orchestrator/worker contract),
 "ok" otherwise. Warning-severity flags don't trigger a retry — see FR6/D5,
 warnings feed confidence scoring instead.
+
+Before any of that: a document-level gate. If extract.py's model judged the
+uploaded document isn't even the right document type (document_type_match ==
+False), this worker short-circuits with status="failed" immediately —
+schema/business validation and the correction loop never run, since
+re-extracting field values makes no sense when the document itself is wrong.
 """
 
 from __future__ import annotations
@@ -54,6 +60,17 @@ def validation_worker(state: dict) -> WorkerResult:
     schema_id = state["schema_id"]
     document = state["document"]
     doc_schema = get_schema(schema_id)
+
+    if getattr(document, "document_type_match", True) is False:
+        note = getattr(document, "document_type_note", None)
+        reason = f"This document doesn't look like a {doc_schema.display_name}."
+        if note:
+            reason += f" It looks more like: {note}."
+        return WorkerResult(
+            status="failed",
+            state={**state, "document_type_mismatch": True},
+            reason=reason,
+        )
 
     _, schema_flags = validate_schema(document.model_dump(mode="json"), schema_id)
 

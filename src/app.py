@@ -55,7 +55,8 @@ st.markdown(
         box-shadow: none !important;
     }
     [data-testid="stMetric"] {
-        background: rgba(127, 127, 127, 0.06);
+        background: rgba(127, 127, 127, 0.12);
+        border: 1px solid rgba(127, 127, 127, 0.18);
         border-radius: 8px;
         padding: 0.75rem 1rem;
     }
@@ -124,6 +125,12 @@ with col_controls:
         sample_choices += sorted(p.name for p in SAMPLE_DIR.glob("*.pdf"))
     sample_pick = st.selectbox("Or try a sample invoice", sample_choices)
 
+    force_rerun = st.checkbox(
+        "Force re-extraction (skip cache)",
+        help="Ignore any cached result for this exact file and call the vision model again — "
+        "useful when testing a prompt/schema change against a file you've already run.",
+    )
+
 with col_upload:
     uploaded = st.file_uploader(
         f"Upload a {doc_type_label.lower()}", type=["pdf", "jpg", "jpeg", "png", "webp"]
@@ -170,7 +177,14 @@ def _render_pipeline_stages(history: list[str]) -> None:
 def _render_agentic_panel(final_state: dict) -> None:
     st.subheader("Agentic Correction Worker")
     retried_fields = final_state.get("retried_fields")
+
     if not retried_fields:
+        if final_state.get("correction_attempted_but_failed"):
+            st.badge("Attempted — could not resolve, original values kept", icon="⚠️", color="orange")
+            reason = final_state.get("correction_failure_reason")
+            if reason:
+                st.caption(reason)
+            return
         st.badge("Not needed — passed validation on the first pass", icon="✅", color="green")
         return
 
@@ -228,6 +242,7 @@ if file_path:
                 "file_path": file_path,
                 "schema_id": schema_id,
                 "duplicate_checker": check_natural_id_exists,
+                "skip_cache": force_rerun,
             },
             workers=[
                 extraction_worker,
@@ -258,7 +273,7 @@ if file_path:
         st.error(f"Extraction succeeded but saving this result to the database failed: {e}")
 
     if result.status == "failed":
-        st.error(f"Extraction failed after retries: {result.reason}")
+        st.error(result.reason or "Extraction failed.")
     else:
         document = result.final_state["document"]
         report = result.final_state["report"]
@@ -287,6 +302,7 @@ if file_path:
             m1.metric("Errors", len(report["errors"]))
             m2.metric("Warnings", len(report["warnings"]))
             m3.metric("Passed", len(report["pass"]))
+            st.caption("Only errors trigger automatic correction — warnings are informational.")
 
             _render_report_group("Errors", report["errors"], "red")
             _render_report_group("Warnings", report["warnings"], "orange")
