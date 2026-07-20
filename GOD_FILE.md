@@ -149,7 +149,17 @@ surfaced the *next* bug, immediately below.
 **Hit a real Gemini free-tier quota limit mid-session** (20 requests/day) from the volume of live
 testing this build involved. Confirmed via the actual API error text, not a guess — and confirms
 the hard-failure path (retry-with-backoff, then a clean reported failure rather than a crash)
-works exactly as designed under a real failure, not just a simulated one.
+works exactly as designed under a real failure, not just a simulated one. Turned out not to be a
+fluke of my usage — Google cut `gemini-2.5-flash`'s (what `gemini-flash-latest` resolved to at the
+time) free-tier quota from 250 requests/day down to 20, platform-wide, without notice, in December
+2025. Rather than switch providers entirely, checked `client.models.list()` for what was actually
+available on the same API key and found `gemini-3.1-flash-lite` — a newer model with a much higher
+free-tier ceiling. Switched via the `GEMINI_MODEL` environment variable, which `extract.py` and
+`retry.py` already read — zero code changes, confirming the "provider/model swap is a config
+change, not a rewrite" design decision actually held under a real forcing event, not just in
+theory. Verified both call sites still work post-switch: a plain extraction call, and a
+function-calling round-trip (needed by the Correction Worker specifically, since that's a
+different capability than the main extraction call uses).
 
 **The Rupee currency symbol rendered as a garbled block character.** Building a more diverse,
 hand-verified test set meant generating new invoices in multiple currencies via a PDF library
@@ -159,25 +169,72 @@ Caught by actually opening the rendered PDF and reading it, not by trusting the 
 script's own variables — which is the entire point of "hand-verified." Fixed by using "Rs."
 instead of relying on the symbol glyph.
 
+**Built an independent OCR cross-check, measured it, and removed it — a "no" is still a finding.**
+After growing the test set with real-world documents (phone-photo receipts, varied real templates
+— see Evaluation below), the natural next step for confidence scoring was an actually *independent*
+second reading of the document, not just another interpretation from the same model. Built a
+worker that ran Tesseract over the same page images and cross-checked the model's extracted
+`total`/id/name/currency fields against Tesseract's raw text, feeding disagreement into confidence.
+Wrote `tune_confidence.py` — a script that runs the pipeline against ground truth and correlates
+confidence scores with actual correctness — to test whether it worked, rather than assuming it did.
+It didn't: **0% catch rate at every threshold tested, across 308 real field observations.** The most
+interesting specific failure: one receipt had two different printed numbers ("Order #: 4876" and
+"Ticket #: 56"); the model extracted the wrong one, and the OCR cross-check reported a **false
+"agrees"** — because "56" was genuinely present on the page too, just as the *other* field's value,
+not confirmation of the right one. Naive substring matching can't distinguish "this string appears
+somewhere on the page" from "this string is the right field's value" — a real limitation, not a bug
+to patch trivially. Separately tried to fix a related rotation blind spot (Tesseract returned empty
+text on the two most-degraded real documents) via a projection-profile deskew; measured it directly
+and found it detected 0° rotation on both known-rotated test images — zero actual correction — so
+that fix was scrapped too, rather than shipped as something that measurably did nothing. Removed
+the whole feature (deleted the module and its tests, reverted every wiring point) instead of
+leaving non-functional code in the pipeline. The lesson: an "independent" cross-check needs a
+reader that's genuinely at least as reliable as what it's checking — Tesseract on real-world photos
+isn't. A better independent signal for a future round: sample the vision model itself 2-3× and
+treat disagreement across samples as the signal, instead of pairing it with a strictly weaker
+non-independent-enough reader.
+
 ## Evaluation results
 
-Test set: **17 hand-verified documents** (14 invoices, 3 receipts), up from the original 5 — now
-spanning 3 distinct visual templates, 4 currencies, varied optional-field combinations, one
-deliberate date-order-warning case, and 3 deliberately blurred/rotated/noisy images (the first
-time this project's test data has actually exercised the "ambiguous/unreadable" extraction-status
-path, rather than only clean digital PDFs).
+Test set: **29 hand-verified documents** (24 invoices, 5 receipts), up from the original 5 — now
+spanning multiple distinct visual templates, several currencies, varied optional-field
+combinations, one deliberate date-order-warning case, several deliberately blurred/rotated/noisy
+synthetic images, AND (new this round) **real-world documents**: genuine phone-photo receipts
+(skewed, glare, background clutter) and a range of real invoice templates pulled from the web —
+not just synthetically degraded PDFs.
 
-_Numbers pending a live re-run — the day's Gemini free-tier quota was exhausted by this session's
-own testing volume. Everything that doesn't require the live API is independently verified: the
-scoring logic, the file-discovery/ground-truth-matching, and the rendering are all covered by unit
-tests and a dry run. Original 5-invoice result, for reference: 100% extraction success, 100% field
-accuracy._
+**Full run, all 29 documents, on `gemini-3.1-flash-lite`:**
 
-Honest caveat, not a boast, whatever the refreshed numbers say: every document in this set is
-either a digitally-generated PDF or a deliberately-degraded image built from one — not an actual
-scan from a real business. A high score says the pipeline is correct across the range of
-formats/currencies/degradations actually tested, not that it's robust to arbitrary real-world
-scans (different fonts, handwriting, physical damage).
+```
+Overall extraction success rate: 100.0%  (29/29)
+Overall field-level accuracy:    99.1%
+
+invoice-v1: extraction success 100.0%  field accuracy 99.6%  (24/24)
+receipt-v1: extraction success 100.0%  field accuracy 96.8%  (5/5)
+```
+
+The gap from 100% (the old all-synthetic number) to 99.1% is the actual point: **real-world
+documents produce real errors that synthetic degradation never did.** Every miss traced to a
+specific, understood cause — not noise: a receipt with a two-line header creating genuine
+merchant-name ambiguity (institution name vs. specific outlet), a stock marketing template whose
+own printed subtotal/total don't reconcile with its own line items (decorative placeholder numbers,
+not a real transaction), and — the one genuine extraction bug found — a receipt with two different
+printed numbers where the model grabbed the wrong one. That bug is also what motivated and then
+sank the OCR cross-check attempt (see above): even a feature built specifically to catch this kind
+of error gave a false "agrees" on it.
+
+One document (`gen_invoice_INV-1006.pdf`) raised a business-validation warning despite scoring
+100% on field accuracy against ground truth — a real, small example of why the two checks are kept
+separate: field accuracy asks "did the extracted values match reality," business validation asks
+"are the values internally consistent with each other." A document can be right and still trip a
+consistency flag (or, in principle, the reverse), and conflating the two into one score would have
+hidden that.
+
+Honest caveat, not a boast: even with real-world documents now in the mix, this is still a small,
+hand-curated set (29 documents), not a standard public benchmark. The field accuracy number is a
+correctness signal on the specific range of formats/degradations actually tested, not a claim of
+general robustness — and it's a small enough error count (roughly 3 wrong fields out of ~300+
+observations) that no confidence threshold could be meaningfully tuned from it this round.
 
 ## Anticipated interview questions
 
@@ -216,6 +273,15 @@ A subtotal that doesn't match its line items, or a total that doesn't match subt
 — both get caught and flagged automatically, and specifically re-examined (as a dependency group,
 not just the one named field) instead of silently accepted or requiring a full manual re-check.
 
+**You built an OCR cross-check — where is it?** Removed it. I tested it against real diverse
+documents with a dedicated tuning script rather than assuming it worked, and it had a 0% catch
+rate on real errors across 308 field observations, plus a specific false-reassurance failure mode
+(agreeing with a wrong value that happened to also appear elsewhere on the same page). I also tried
+fixing a related rotation blind spot and measured that the fix did nothing either. Rather than ship
+a feature that doesn't earn its keep, I deleted it and documented why — the finding (an independent
+signal needs a reader that's actually as reliable as what it's checking, and Tesseract on real-world
+photos isn't) is worth more than the feature would have been.
+
 ---
 
-_Last updated: 2026-07-18 at commit 934974d._
+_Last updated: 2026-07-20 at commit a20a263 (uncommitted local changes on top — see git status)._

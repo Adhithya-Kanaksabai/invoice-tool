@@ -1,0 +1,18 @@
+{
+  "vendor_name": "Brand Name",
+  "customer_name": "Dwyane Clark",
+  "invoice_number": "52148",
+  "due_date": null,
+  "currency": "USD",
+  "line_items": [
+    {"description": "Lorem Ipsum Dolor", "quantity": 1, "unit_price": 50.00, "amount": 50.00},
+    {"description": "Pellentesque id neque ligula", "quantity": 2, "unit_price": 20.00, "amount": 40.00},
+    {"description": "Interdum et malesuada fames", "quantity": 2, "unit_price": 10.00, "amount": 20.00},
+    {"description": "Vivamus volutpat faucibus", "quantity": 1, "unit_price": 90.00, "amount": 90.00}
+  ],
+  "subtotal": 200.00,
+  "discount": null,
+  "shipping": null,
+  "tax": 0.0,
+  "total": 200.00
+}

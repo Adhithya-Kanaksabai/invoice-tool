@@ -1,0 +1,33 @@
+{
+  "vendor_name": "Harbour Marine Supplies",
+  "customer_name": "Elena Popova",
+  "invoice_number": "INV-2004",
+  "invoice_date": "2024-05-20",
+  "due_date": "2024-06-19",
+  "currency": "GBP",
+  "line_items": [
+    {
+      "description": "Marine Rope 10mm (m)",
+      "quantity": 50,
+      "unit_price": 1.85,
+      "amount": 92.5
+    },
+    {
+      "description": "Stainless Shackle",
+      "quantity": 8,
+      "unit_price": 6.4,
+      "amount": 51.2
+    },
+    {
+      "description": "Fender Large",
+      "quantity": 4,
+      "unit_price": 23.0,
+      "amount": 92.0
+    }
+  ],
+  "subtotal": 235.7,
+  "discount": 11.79,
+  "shipping": 15.0,
+  "tax": 47.78,
+  "total": 286.69
+}

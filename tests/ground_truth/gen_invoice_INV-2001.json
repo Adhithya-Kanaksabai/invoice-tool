@@ -1,0 +1,33 @@
+{
+  "vendor_name": "Ironclad Hardware LLC",
+  "customer_name": "Marcus Webb",
+  "invoice_number": "INV-2001",
+  "invoice_date": "2024-05-02",
+  "due_date": "2024-06-01",
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "Hex Bolts M8 (box)",
+      "quantity": 12,
+      "unit_price": 7.45,
+      "amount": 89.4
+    },
+    {
+      "description": "Lock Washers (pack)",
+      "quantity": 8,
+      "unit_price": 3.2,
+      "amount": 25.6
+    },
+    {
+      "description": "Threadlocker 50ml",
+      "quantity": 4,
+      "unit_price": 11.75,
+      "amount": 47.0
+    }
+  ],
+  "subtotal": 162.0,
+  "discount": 16.2,
+  "shipping": 14.5,
+  "tax": 12.96,
+  "total": 173.26
+}

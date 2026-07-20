@@ -1,0 +1,27 @@
+{
+  "vendor_name": "Alpine Optics GmbH",
+  "customer_name": "Johann Keller",
+  "invoice_number": "INV-2006",
+  "invoice_date": "2024-03-11",
+  "due_date": "2024-04-10",
+  "currency": "EUR",
+  "line_items": [
+    {
+      "description": "Binoculars 10x42",
+      "quantity": 2,
+      "unit_price": 189.0,
+      "amount": 378.0
+    },
+    {
+      "description": "Lens Cloth (pack)",
+      "quantity": 6,
+      "unit_price": 4.5,
+      "amount": 27.0
+    }
+  ],
+  "subtotal": 405.0,
+  "discount": null,
+  "shipping": null,
+  "tax": 81.0,
+  "total": 486.0
+}

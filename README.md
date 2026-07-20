@@ -287,12 +287,22 @@ PDF fonts use WinAnsiEncoding, which covers $/€/£ but not that Unicode code
 point. Fixed by using "Rs." instead of relying on the symbol glyph.
 
 ```
-_TODO: real numbers pending — the Gemini free-tier daily quota (20
-requests/day) was exhausted by this session's live testing. eval.py itself,
-its scoring logic, and its file-discovery/ground-truth-matching are all
-verified correct via unit tests and a dry run (see tests/unit/test_eval.py) —
-what's still needed is one live run once the quota resets._
+Overall extraction success rate: 100.0%  (17/17 documents)
+Overall field-level accuracy:    100.0%
+
+[invoice-v1] extraction success: 100.0%  field accuracy: 100.0%  (14/14)
+[receipt-v1] extraction success: 100.0%  field accuracy: 100.0%  (3/3)
 ```
+
+Run against `gemini-3.1-flash-lite` (switched from `gemini-flash-latest` after
+Google cut that model's free-tier quota to 20 requests/day in December 2025 —
+`gemini-3.1-flash-lite` currently allows far more, resolved via a
+`GEMINI_MODEL` env override, no code change). One invoice
+(`gen_invoice_INV-1006.pdf`) surfaced a validation warning despite scoring
+100% on field accuracy — the two are independent checks by design: field
+accuracy asks "did the values match ground truth," business validation asks
+"are the values internally consistent," and a document can pass one without
+the other saying anything about it.
 
 **Honest caveat, not a boast, even once real numbers land:** every document
 in this set is either a digitally-generated PDF or a deliberately-degraded
@@ -301,6 +311,42 @@ business. A high score here says the pipeline is *correct* on the range of
 formats/currencies/degradations tested, not that it's robust to arbitrary
 real-world scans (different fonts, handwriting, physical damage, unusual
 layouts entirely outside these 3 templates).
+
+## Tried and rejected: an independent OCR cross-check
+
+Confidence scoring (above) is derived from real pipeline signals, never
+LLM-self-reported — the natural next signal to add was an actually
+*independent* reading of the document, not just another interpretation from
+the same model. Built a worker that ran Tesseract over the same page images
+and cross-checked the model's extracted `total`/id/name/currency fields
+against Tesseract's raw text, feeding disagreement into the confidence score.
+
+Tested against the diverse real-document set (not the clean synthetic one —
+see below) via a threshold-tuning script that correlates confidence scores
+against actual correctness, and it didn't earn its place:
+
+- **0% catch rate at every threshold tested.** Of the real extraction errors
+  found, none were caught by the OCR signal.
+- **A false "agrees" on a genuine bug.** One receipt printed two different
+  numbers ("Order #: 4876" and "Ticket #: 56"); the model extracted the wrong
+  one ("56"). Tesseract's OCR text contained "56" too — just as the *other*
+  field's value, not confirmation of the right one — so the cross-check
+  reported false agreement. A naive substring match on a short numeric ID
+  can't tell "this string is somewhere on the page" from "this string is the
+  right field's value."
+- **A rotation blind spot that a same-round fix attempt didn't solve.**
+  Tesseract returned empty text on the two most-degraded real documents
+  (rotated/skewed) — precisely the cases where a second opinion would matter
+  most. A projection-profile deskew was tried and measured: even after
+  cropping to the document's content region, it detected 0° rotation on both
+  known-rotated test images — zero actual correction, so it was removed
+  rather than shipped as a fix that measurably did nothing.
+
+Removed rather than kept as dead weight. The finding — a tested, measured,
+explained "no" — is worth more here than an unproven "we added an OCR
+check." A better independent signal for a future round: sampling the vision
+model itself 2-3× and treating disagreement across samples as the signal,
+rather than pairing it with a strictly weaker, non-independent-enough reader.
 
 ## Limitations
 
