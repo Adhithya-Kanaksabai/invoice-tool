@@ -378,6 +378,8 @@ testing (graceful failure messages, document-type mismatch detection, a real lin
 and an Agentic Correction Worker UI mislabel), a docs polish pass (README rewritten from 410 to
 ~130 lines with deep reasoning moved to this file and `spec/design.md` rather than duplicated, an
 MIT LICENSE added, and real screenshots captured via a one-off Playwright script since the running
-app couldn't otherwise produce savable image files), and Docker/docker-compose with Postgres,
-verified end-to-end against a real container (migrations, a live extraction, and cross-run
-duplicate detection all confirmed working, not just assumed)._
+app couldn't otherwise produce savable image files), Docker/docker-compose with Postgres, verified
+end-to-end against a real container (migrations, a live extraction, and cross-run duplicate
+detection all confirmed working, not just assumed), and a second README pass trimming ~130 lines
+of prose down to ~90 with a Mermaid flowchart replacing the ASCII architecture diagram — the first
+version was still too dense to actually get read._
