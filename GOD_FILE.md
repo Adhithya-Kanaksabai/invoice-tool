@@ -361,7 +361,9 @@ photos isn't) is worth more than the feature would have been.
 ---
 
 _Last updated: 2026-07-21 — includes the SQLAlchemy/Alembic persistence layer (content-hash cache,
-cross-run duplicate detection), a Streamlit styling pass, and five bugs found via manual
-adversarial testing (graceful failure messages, document-type mismatch detection, a real
-line-item column bug, and an Agentic Correction Worker UI mislabel), all committed together in
-this push._
+cross-run duplicate detection), a Streamlit styling pass, five bugs found via manual adversarial
+testing (graceful failure messages, document-type mismatch detection, a real line-item column bug,
+and an Agentic Correction Worker UI mislabel), and a docs polish pass (README rewritten from 410
+to ~130 lines with deep reasoning moved to this file and `spec/design.md` rather than duplicated,
+an MIT LICENSE added, and real screenshots captured via a one-off Playwright script since the
+running app couldn't otherwise produce savable image files)._
