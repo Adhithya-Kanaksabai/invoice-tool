@@ -22,11 +22,23 @@ and final_state, not re-derived guesses.
 
 from __future__ import annotations
 
+import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
+
+# Streamlit Community Cloud exposes secrets via st.secrets, not as OS env
+# vars — bridge them into os.environ before any local module import, since
+# db.py reads DATABASE_URL at import time (module-level create_engine call).
+# No-op locally, where secrets.toml doesn't exist and GEMINI_API_KEY/
+# DATABASE_URL already come from .env via python-dotenv instead.
+try:
+    for _key, _value in st.secrets.items():
+        os.environ.setdefault(_key, str(_value))
+except Exception:
+    pass
 
 from confidence import confidence_worker
 from export import export_csv, export_json
