@@ -98,7 +98,6 @@ and why that "no" was worth keeping documented rather than discarded.
 - No bounding-box grounding — citation-level text notes only (`source_note` per field).
 - Single invoice per file; no multi-invoice-per-file support.
 - No jurisdiction-specific rules (GST/VAT number/rate validation) beyond generic tax-as-a-field.
-- Docker/docker-compose packaging is planned but not yet built (see `spec/design.md`'s roadmap).
 
 ## Tech stack
 
@@ -106,6 +105,22 @@ Python 3.11, Pydantic v2, `pdf2image` + Poppler, Pillow, `google-genai` (Gemini)
 SQLAlchemy + Alembic, pandas. Dev/test-only: Ruff, pytest, `reportlab` (test-data generation).
 
 ## Running it
+
+### With Docker (Postgres, no local Poppler install needed)
+
+```bash
+cd invoice-tool
+cp .env.example .env   # fill in GEMINI_API_KEY
+docker compose up --build
+```
+
+Runs Alembic migrations against a real Postgres container on startup, then serves the app at
+`http://localhost:8501`. This is the actual justification for Docker here: Poppler not being on
+PATH after a mid-session install cost real debugging time in this project (see `GOD_FILE.md`) —
+baking it into the image via `apt-get install poppler-utils` makes that whole class of problem
+disappear.
+
+### Without Docker (local Python + SQLite)
 
 ```bash
 cd invoice-tool

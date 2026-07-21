@@ -260,6 +260,18 @@ completely wrong. Doing that by hand found:
    "Force re-extraction (skip cache)" checkbox in the UI, wired to the `skip_cache` state key
    `eval.py` already used internally — no new mechanism, just exposing an existing one.
 
+**Docker + docker-compose (Postgres), verified end-to-end, not just written and assumed to work.**
+Added a `Dockerfile` (Python 3.11-slim, `apt-get install poppler-utils` baked in — the actual
+justification for Docker here, since a Poppler-not-on-PATH mid-session install was a real earlier
+debugging cost) and a `docker-compose.yml` (app + Postgres 16, healthcheck-gated startup so
+Alembic never races an unready DB). Actually ran `docker compose up --build`, confirmed
+`alembic upgrade head` created all four tables against a fresh real Postgres container (not
+SQLite), ran the full pipeline against a live Gemini call inside the container, and confirmed the
+extracted row landed in Postgres with the real values (vendor, invoice number, total) — then
+re-ran the same invoice and confirmed cross-run duplicate detection fired correctly against that
+same Postgres instance. `db.py`'s "DATABASE_URL from env, SQLite default" design meant this needed
+zero code changes — the same "config, not code" shape the Gemini model swap already proved once.
+
 ## Evaluation results
 
 Test set: **29 hand-verified documents** (24 invoices, 5 receipts), up from the original 5 — now
@@ -363,7 +375,9 @@ photos isn't) is worth more than the feature would have been.
 _Last updated: 2026-07-21 — includes the SQLAlchemy/Alembic persistence layer (content-hash cache,
 cross-run duplicate detection), a Streamlit styling pass, five bugs found via manual adversarial
 testing (graceful failure messages, document-type mismatch detection, a real line-item column bug,
-and an Agentic Correction Worker UI mislabel), and a docs polish pass (README rewritten from 410
-to ~130 lines with deep reasoning moved to this file and `spec/design.md` rather than duplicated,
-an MIT LICENSE added, and real screenshots captured via a one-off Playwright script since the
-running app couldn't otherwise produce savable image files)._
+and an Agentic Correction Worker UI mislabel), a docs polish pass (README rewritten from 410 to
+~130 lines with deep reasoning moved to this file and `spec/design.md` rather than duplicated, an
+MIT LICENSE added, and real screenshots captured via a one-off Playwright script since the running
+app couldn't otherwise produce savable image files), and Docker/docker-compose with Postgres,
+verified end-to-end against a real container (migrations, a live extraction, and cross-run
+duplicate detection all confirmed working, not just assumed)._
