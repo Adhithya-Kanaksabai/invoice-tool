@@ -4,8 +4,18 @@ Verifies score_document generalizes correctly across both registered
 schemas (D17) and that a deliberate mismatch is actually caught.
 """
 
+import json
 
-from eval import _values_match, score_document
+from eval import (
+    MANIFEST_PATH,
+    TESTS_DIR,
+    _accuracy,
+    _percentile,
+    _summarize_latency,
+    _values_match,
+    load_manifest,
+    score_document,
+)
 from schema import Invoice, Receipt
 
 
@@ -92,3 +102,62 @@ def test_score_document_works_for_receipt_schema_too():
     receipt = Receipt(**gt)
     correct, total = score_document(receipt, gt, "items")
     assert correct == total
+
+
+# --- dataset stratification + observability aggregation ---------------------
+
+
+def test_manifest_covers_every_sample_file_exactly():
+    """
+    The manifest is only useful if it's complete: a sample file missing from
+    it silently lands in the 'uncategorized' bucket and quietly stops being
+    measured as part of its real category.
+    """
+    manifest = load_manifest()
+    on_disk = {
+        p.name
+        for directory in (TESTS_DIR / "sample_invoices", TESTS_DIR / "sample_receipts")
+        if directory.exists()
+        for p in directory.iterdir()
+        if p.suffix.lower() in {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
+    }
+    assert on_disk - set(manifest) == set(), "sample files missing from tests/manifest.json"
+    assert set(manifest) - on_disk == set(), "manifest lists files that no longer exist"
+
+
+def test_manifest_uses_only_declared_categories():
+    declared = set(json.loads(MANIFEST_PATH.read_text())["categories"])
+    assert declared == {"clean_synthetic", "degraded_synthetic", "real_photo", "web_template"}
+    assert set(load_manifest().values()) <= declared
+
+
+def test_load_manifest_tolerates_a_missing_file(tmp_path):
+    # Stratification is a reporting nicety, not a precondition for measuring.
+    assert load_manifest(tmp_path / "nope.json") == {}
+
+
+def test_percentile_returns_an_actually_observed_value():
+    values = [1.0, 2.0, 3.0, 4.0, 100.0]
+    assert _percentile(values, 50) == 3.0
+    assert _percentile(values, 95) == 100.0
+    assert _percentile(values, 100) == 100.0
+    assert _percentile([], 50) is None
+
+
+def test_percentile_handles_a_single_sample():
+    assert _percentile([2.5], 95) == 2.5
+
+
+def test_summarize_latency_reports_n_avg_and_tails():
+    summary = _summarize_latency([1.0, 2.0, 3.0])
+    assert summary["n"] == 3
+    assert summary["avg_s"] == 2.0
+    assert summary["max_s"] == 3.0
+    assert _summarize_latency([]) is None
+
+
+def test_accuracy_is_none_rather_than_zero_when_nothing_was_scored():
+    # "we scored nothing" and "we scored everything wrong" are different facts.
+    assert _accuracy(0, 0) is None
+    assert _accuracy(0, 4) == 0.0
+    assert _accuracy(3, 4) == 0.75

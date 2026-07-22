@@ -17,8 +17,15 @@ doesn't exist yet. See design.md "Orchestration philosophy".
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+
+# Reserved state key for per-worker wall-clock timings. Kept generic on
+# purpose: the orchestrator times whatever workers it is handed, keyed by
+# their own __name__, and stays ignorant of what any of them do — same
+# discipline as the `history` list it already maintains.
+LATENCY_KEY = "_stage_latency_s"
 
 
 @dataclass
@@ -63,11 +70,33 @@ def run_pipeline(
     history: list[str] = []
     correction_rounds = 0
 
+    # One timings dict, attached to the incoming state immediately and
+    # re-attached after every worker call. Three reasons for that shape:
+    # a worker may return a brand-new dict (so timings must be re-attached,
+    # not merely mutated through `state`); a worker may raise straight through
+    # this function (so the caller needs the dict already attached to the state
+    # it passed in); and a worker re-run after a correction round should report
+    # its TOTAL time, hence += rather than =, matching how `history` lists it
+    # twice.
+    timings: dict[str, float] = initial_state.setdefault(LATENCY_KEY, {})
+
+    def _run_timed(w: Worker, current_state: dict, fallback_name: str) -> WorkerResult:
+        name = getattr(w, "__name__", fallback_name)
+        start = time.perf_counter()
+        try:
+            return w(current_state)
+        finally:
+            # In a finally block so a worker that raises still reports the
+            # time it burned before doing so — an exception thrown after a
+            # 30-second API timeout is exactly the case worth seeing.
+            timings[name] = timings.get(name, 0.0) + (time.perf_counter() - start)
+
     i = 0
     while i < len(workers):
         worker = workers[i]
-        result = worker(state)
+        result = _run_timed(worker, state, f"worker_{i}")
         state = result.state
+        state[LATENCY_KEY] = timings
         history.append(getattr(worker, "__name__", f"worker_{i}"))
 
         if result.status == "failed":
@@ -84,8 +113,9 @@ def run_pipeline(
                 continue
 
             correction_rounds += 1
-            correction_result = correction_worker(state)
+            correction_result = _run_timed(correction_worker, state, "correction_worker")
             state = correction_result.state
+            state[LATENCY_KEY] = timings
             history.append(getattr(correction_worker, "__name__", "correction_worker"))
             # Re-run the SAME worker (e.g. Validation Worker) to check
             # whether the correction actually resolved the issue.
