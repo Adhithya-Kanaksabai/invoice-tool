@@ -1,6 +1,6 @@
 # Invoice Intelligence Tool
 
-![Python 3.11](https://img.shields.io/badge/python-3.11-blue) ![License: MIT](https://img.shields.io/badge/license-MIT-green) ![Tests: 81 passing](https://img.shields.io/badge/tests-81%20passing-brightgreen)
+![Python 3.11](https://img.shields.io/badge/python-3.11-blue) ![License: MIT](https://img.shields.io/badge/license-MIT-green) ![Tests: 122 passing](https://img.shields.io/badge/tests-122%20passing-brightgreen)
 
 Upload a scanned invoice or receipt. Get back structured, validated data — not just whatever an
 LLM guessed. It flags what's actually wrong (missing fields, bad math, low confidence) instead of
