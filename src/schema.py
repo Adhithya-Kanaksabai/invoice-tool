@@ -123,7 +123,15 @@ class Receipt(BaseModel):
 
     merchant_name: str
     transaction_id: str | None = None
-    transaction_date: date
+    # Optional, not required like Invoice.invoice_date: a real phone-photo
+    # receipt can be too blurry/cropped for a date to be legible at all (see
+    # the CORD-v2 external benchmark — 16/20 extraction failures traced to
+    # exactly this field being hard-required against genuinely illegible
+    # photos, e.g. tests/cord_benchmark/images/cord_014.jpg). Forcing a
+    # best-guess date onto an undated receipt is worse than admitting
+    # "unknown" — a fabricated date is silently wrong in a way a missing one
+    # isn't.
+    transaction_date: date | None = None
     payment_method: str | None = None
     currency: str = "USD"
 

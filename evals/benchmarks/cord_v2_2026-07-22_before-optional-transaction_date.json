@@ -1,0 +1,110 @@
+{
+  "benchmark": "CORD-v2 (naver-clova-ix/cord-v2, external, CC-BY-4.0)",
+  "generated_at": "2026-07-22T17:52:33Z",
+  "total_documents": 20,
+  "extraction_success_rate": 0.2,
+  "field_accuracy": 0.842,
+  "note": "Ground truth here only covers `total` and item descriptions -- narrower than the hand-verified 29-document set's full field coverage. See tests/fetch_cord_benchmark.py for why.",
+  "per_document": [
+    {
+      "file": "cord_000.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_001.png",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_002.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_003.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_004.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_005.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_006.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_007.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_008.png",
+      "extraction_failed": false,
+      "field_accuracy": 0.667
+    },
+    {
+      "file": "cord_009.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_010.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_011.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_012.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_013.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_014.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_015.png",
+      "extraction_failed": false,
+      "field_accuracy": 0.5
+    },
+    {
+      "file": "cord_016.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_017.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_018.png",
+      "extraction_failed": true,
+      "reason": "Could not extract a valid Receipt from this document after 3 attempts \u2014 the model's output was missing or malformed for: transaction_date. This usually means the uploaded file doesn't match the selected document type, or key fields are unreadable."
+    },
+    {
+      "file": "cord_019.png",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    }
+  ]
+}
