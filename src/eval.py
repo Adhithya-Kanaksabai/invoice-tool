@@ -19,13 +19,16 @@ extraction success rate.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
 from confidence import confidence_worker
-from extract import extraction_worker
+from eval_report import write_report
+from extract import MODEL_NAME, extraction_worker
 from ingest import compute_content_hash
-from orchestrator import run_pipeline
+from llm_usage import TOKENS_KEY, empty_usage, estimate_cost_usd, pricing_label
+from orchestrator import LATENCY_KEY, run_pipeline
 from persistence import check_natural_id_exists, persist_pipeline_result
 from report import report_worker
 from retry import correction_worker
@@ -34,6 +37,8 @@ from validate import validation_worker
 
 TESTS_DIR = Path(__file__).parent.parent / "tests"
 FLOAT_TOLERANCE = 0.01
+MANIFEST_PATH = TESTS_DIR / "manifest.json"
+UNCATEGORIZED = "uncategorized"
 
 # Each dataset: schema_id, its sample dir, its ground-truth dir, and the
 # field this schema uses for "duplicate within batch" tracking (the ONE bit
@@ -104,9 +109,87 @@ def score_document(document, ground_truth: dict, list_field: str) -> tuple[int, 
     return correct, total
 
 
+def load_manifest(path: Path = MANIFEST_PATH) -> dict[str, str]:
+    """
+    filename -> category, from tests/manifest.json.
+
+    A missing manifest is not an error: the eval still runs and everything
+    lands in one `uncategorized` bucket. Stratification is a reporting
+    improvement, not a precondition for measuring accuracy.
+    """
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text()).get("files", {})
+
+
+def _percentile(values: list[float], pct: float) -> float | None:
+    """
+    Nearest-rank percentile. Deliberately not statistics.quantiles(), which
+    needs at least two data points and interpolates — with an n of 29, an
+    interpolated p95 would be a fiction dressed up as a measurement. Nearest-
+    rank always returns a value that was actually observed.
+    """
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, int(round(pct / 100 * len(ordered) + 0.5)) - 1))
+    return ordered[index]
+
+
+def _summarize_latency(samples: list[float]) -> dict | None:
+    if not samples:
+        return None
+    return {
+        "n": len(samples),
+        "avg_s": round(sum(samples) / len(samples), 3),
+        "p50_s": round(_percentile(samples, 50), 3),
+        "p95_s": round(_percentile(samples, 95), 3),
+        "max_s": round(max(samples), 3),
+    }
+
+
+def _accuracy(correct: int, total: int) -> float | None:
+    return round(correct / total, 3) if total else None
+
+
+def _pct(value: float | None) -> str:
+    return "  n/a" if value is None else f"{value:.1%}"
+
+
 def run_eval() -> dict:
     overall = {"total_invoices": 0, "extraction_successes": 0, "field_correct": 0, "field_total": 0}
     per_dataset: dict[str, dict] = {}
+
+    manifest = load_manifest()
+    # Stratified accumulators (D-new): the same three counters as `overall`,
+    # but bucketed by document category, so a strong score on clean synthetic
+    # PDFs can't quietly average away a weak one on degraded scans.
+    by_category: dict[str, dict] = {}
+    # Observability accumulators. Kept as raw per-document samples rather than
+    # running means so percentiles are computable — an average latency hides
+    # exactly the tail the retry loop creates.
+    stage_latency_samples: dict[str, list[float]] = {}
+    total_latency_samples: list[float] = []
+    token_samples: list[dict] = []
+    failure_reasons: list[str] = []
+
+    def _bucket(category: str) -> dict:
+        return by_category.setdefault(
+            category,
+            {"documents": 0, "extraction_successes": 0, "field_correct": 0, "field_total": 0},
+        )
+
+    def _record_observability(final_state: dict) -> tuple[dict, dict, float]:
+        """Pull the two reserved metadata keys off a finished pipeline state."""
+        tokens = dict(final_state.get(TOKENS_KEY) or empty_usage())
+        stages = dict(final_state.get(LATENCY_KEY) or {})
+        for stage_name, seconds in stages.items():
+            stage_latency_samples.setdefault(stage_name, []).append(seconds)
+        total_seconds = sum(stages.values())
+        total_latency_samples.append(total_seconds)
+        if tokens.get("calls"):
+            token_samples.append(tokens)
+        return tokens, stages, total_seconds
 
     for dataset in DATASETS:
         schema_id = dataset["schema_id"]
@@ -139,6 +222,9 @@ def run_eval() -> dict:
                 dataset_total -= 1
                 continue
             ground_truth = json.loads(gt_path.read_text())
+            category = manifest.get(sample_path.name, UNCATEGORIZED)
+            bucket = _bucket(category)
+            bucket["documents"] += 1
 
             initial_state = {
                 "file_path": str(sample_path),
@@ -171,8 +257,14 @@ def run_eval() -> dict:
                 # than raising, but a batch eval run must never let ONE bad
                 # document take down the whole run regardless of where the
                 # exception originates (D9).
+                failure_reasons.append(f"pipeline raised: {type(e).__name__}")
                 per_invoice_results.append(
-                    {"file": sample_path.name, "extraction_failed": True, "error": str(e)}
+                    {
+                        "file": sample_path.name,
+                        "category": category,
+                        "extraction_failed": True,
+                        "error": str(e),
+                    }
                 )
                 continue
 
@@ -189,17 +281,36 @@ def run_eval() -> dict:
                     started_at=started_at,
                 )
             except Exception as e:
-                per_invoice_results.append(
-                    {"file": sample_path.name, "persistence_failed": str(e)}
-                )
+                per_invoice_results.append({"file": sample_path.name, "persistence_failed": str(e)})
+
+            tokens, stages, total_seconds = _record_observability(result.final_state)
+            estimated_cost = estimate_cost_usd(
+                tokens.get("prompt", 0), tokens.get("candidates", 0), MODEL_NAME
+            )
+            observability = {
+                "category": category,
+                "tokens": tokens,
+                "stage_latency_s": {k: round(v, 3) for k, v in stages.items()},
+                "total_latency_s": round(total_seconds, 3),
+                "estimated_cost_usd": (
+                    round(estimated_cost, 6) if estimated_cost is not None else None
+                ),
+            }
 
             if result.status == "failed":
+                failure_reasons.append(result.reason or "unspecified failure")
                 per_invoice_results.append(
-                    {"file": sample_path.name, "extraction_failed": True, "reason": result.reason}
+                    {
+                        "file": sample_path.name,
+                        **observability,
+                        "extraction_failed": True,
+                        "reason": result.reason,
+                    }
                 )
                 continue
 
             dataset_successes += 1
+            bucket["extraction_successes"] += 1
             document = result.final_state["document"]
             doc_id = getattr(document, dataset["id_field"], None)
             if doc_id:
@@ -208,11 +319,14 @@ def run_eval() -> dict:
             correct, total = score_document(document, ground_truth, list_field)
             dataset_field_correct += correct
             dataset_field_total += total
+            bucket["field_correct"] += correct
+            bucket["field_total"] += total
             per_invoice_results.append(
                 {
                     "file": sample_path.name,
+                    **observability,
                     "extraction_failed": False,
-                    "field_accuracy": round(correct / total, 3) if total else None,
+                    "field_accuracy": _accuracy(correct, total),
                     "errors": len(result.final_state["report"]["errors"]),
                     "warnings": len(result.final_state["report"]["warnings"]),
                 }
@@ -220,12 +334,8 @@ def run_eval() -> dict:
 
         per_dataset[schema_id] = {
             "total_documents": dataset_total,
-            "extraction_success_rate": round(dataset_successes / dataset_total, 3)
-            if dataset_total
-            else 0,
-            "field_accuracy": round(dataset_field_correct / dataset_field_total, 3)
-            if dataset_field_total
-            else None,
+            "extraction_success_rate": _accuracy(dataset_successes, dataset_total) or 0,
+            "field_accuracy": _accuracy(dataset_field_correct, dataset_field_total),
             "per_document": per_invoice_results,
         }
 
@@ -234,24 +344,80 @@ def run_eval() -> dict:
         overall["field_correct"] += dataset_field_correct
         overall["field_total"] += dataset_field_total
 
+    documents_measured = len(token_samples)
+    total_tokens = {
+        key: sum(sample.get(key, 0) for sample in token_samples)
+        for key in ("prompt", "candidates", "total", "calls")
+    }
+    total_cost = estimate_cost_usd(total_tokens["prompt"], total_tokens["candidates"], MODEL_NAME)
+
+    def _avg(value: float) -> float | None:
+        return round(value / documents_measured, 3) if documents_measured else None
+
     return {
+        "model": MODEL_NAME,
+        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "overall_extraction_success_rate": (
-            round(overall["extraction_successes"] / overall["total_invoices"], 3)
-            if overall["total_invoices"]
-            else 0
+            _accuracy(overall["extraction_successes"], overall["total_invoices"]) or 0
         ),
-        "overall_field_accuracy": (
-            round(overall["field_correct"] / overall["field_total"], 3)
-            if overall["field_total"]
-            else None
-        ),
+        "overall_field_accuracy": _accuracy(overall["field_correct"], overall["field_total"]),
         "by_schema": per_dataset,
+        "by_category": {
+            category: {
+                "documents": stats["documents"],
+                "extraction_success_rate": _accuracy(
+                    stats["extraction_successes"], stats["documents"]
+                ),
+                "field_accuracy": _accuracy(stats["field_correct"], stats["field_total"]),
+            }
+            for category, stats in sorted(by_category.items())
+        },
+        "latency": {
+            "per_stage_s": {
+                stage: _summarize_latency(samples)
+                for stage, samples in sorted(stage_latency_samples.items())
+            },
+            "end_to_end_s": _summarize_latency(total_latency_samples),
+        },
+        "tokens": {
+            "documents_measured": documents_measured,
+            "total": total_tokens,
+            "avg_prompt_per_document": _avg(total_tokens["prompt"]),
+            "avg_candidates_per_document": _avg(total_tokens["candidates"]),
+            "avg_total_per_document": _avg(total_tokens["total"]),
+            "avg_calls_per_document": _avg(total_tokens["calls"]),
+        },
+        "cost": {
+            # Derived, not measured — see llm_usage.py. The label travels
+            # with the number everywhere it's rendered.
+            "estimated_total_usd": round(total_cost, 6) if total_cost is not None else None,
+            "estimated_avg_usd_per_document": (
+                round(total_cost / documents_measured, 6)
+                if total_cost is not None and documents_measured
+                else None
+            ),
+            "rate_label": pricing_label(MODEL_NAME),
+        },
+        "failures": {
+            "count": len(failure_reasons),
+            "most_common_reason": (
+                Counter(failure_reasons).most_common(1)[0][0] if failure_reasons else None
+            ),
+            "reason_counts": dict(Counter(failure_reasons).most_common()),
+        },
     }
 
 
 if __name__ == "__main__":
     results = run_eval()
     print(json.dumps(results, indent=2))
+    print()
+    for category, stats in results["by_category"].items():
+        print(
+            f"[{category:>18}] n={stats['documents']:>2}  "
+            f"field accuracy: {_pct(stats['field_accuracy'])}  "
+            f"extraction success: {_pct(stats['extraction_success_rate'])}"
+        )
     print()
     for schema_id, stats in results["by_schema"].items():
         print(f"[{schema_id}] extraction success: {stats['extraction_success_rate']:.1%}", end="  ")
@@ -263,3 +429,8 @@ if __name__ == "__main__":
     print(f"Overall extraction success rate: {results['overall_extraction_success_rate']:.1%}")
     if results["overall_field_accuracy"] is not None:
         print(f"Overall field-level accuracy:    {results['overall_field_accuracy']:.1%}")
+
+    paths = write_report(results)
+    print()
+    print(f"Report written to {paths['markdown']}")
+    print(f"            and   {paths['json']}")

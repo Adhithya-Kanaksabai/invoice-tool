@@ -39,6 +39,7 @@ from google import genai
 from google.genai import types
 
 from ingest import PageImage
+from llm_usage import accumulate_usage
 from orchestrator import WorkerResult
 from schema_registry import get_schema
 
@@ -151,7 +152,11 @@ def _coerce_numeric_strings(field_name: str, value, model) -> object:
 
 
 def _deterministic_fallback(
-    client: genai.Client, prompt_text: str, pages: list[PageImage], retry_fields: set[str]
+    client: genai.Client,
+    prompt_text: str,
+    pages: list[PageImage],
+    retry_fields: set[str],
+    state: dict,
 ) -> dict | None:
     """D6's documented fallback: one plain JSON re-extraction call, no tools."""
     fallback_prompt = (
@@ -164,6 +169,7 @@ def _deterministic_fallback(
         contents=[fallback_prompt, *_image_parts(pages)],
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
+    accumulate_usage(state, response)
     try:
         return json.loads((response.text or "").strip())
     except json.JSONDecodeError:
@@ -211,6 +217,10 @@ def correction_worker(state: dict) -> WorkerResult:
         response = client.models.generate_content(
             model=MODEL_NAME, contents=contents, config=config
         )
+        # Every turn of the agentic loop is a billable call — an expensive
+        # correction that took four turns to converge should LOOK expensive
+        # in the eval, not hide behind a single-call average.
+        accumulate_usage(state, response)
         calls = response.function_calls
         if not calls:
             break  # model didn't use the tool protocol — fall through to the deterministic fallback
@@ -244,7 +254,7 @@ def correction_worker(state: dict) -> WorkerResult:
 
     used_fallback = corrected_fields is None
     if used_fallback:
-        corrected_fields = _deterministic_fallback(client, prompt_text, pages, retry_fields)
+        corrected_fields = _deterministic_fallback(client, prompt_text, pages, retry_fields, state)
 
     if not corrected_fields:
         # Even the fallback didn't produce anything usable — leave the

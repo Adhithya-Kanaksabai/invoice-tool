@@ -33,6 +33,7 @@ from google.genai import types
 from pydantic import ValidationError
 
 from ingest import PageImage, compute_content_hash, load_page_images
+from llm_usage import accumulate_usage
 from orchestrator import WorkerResult
 from persistence import find_cached_document
 from schema_registry import get_schema
@@ -150,12 +151,17 @@ def _describe_ingest_error(error: Exception) -> str:
     return f"the file appears to be corrupt or unreadable ({type_name})"
 
 
-def _call_gemini(client: genai.Client, prompt: str, pages: list[PageImage]) -> str:
+def _call_gemini(client: genai.Client, prompt: str, pages: list[PageImage], state: dict) -> str:
     response = client.models.generate_content(
         model=MODEL_NAME,
         contents=[prompt, *_image_parts(pages)],
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
+    # Record usage BEFORE the empty-response check: a call that came back
+    # unusable still consumed quota and still cost money. Counting only the
+    # successful calls would understate the real per-document cost, which is
+    # precisely the number the eval is trying to measure honestly.
+    accumulate_usage(state, response)
     if not response.text:
         raise ValueError("empty response from vision model")
     return response.text
@@ -230,7 +236,7 @@ def extraction_worker(state: dict) -> WorkerResult:
     last_error: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            raw_text = _call_gemini(client, prompt, pages)
+            raw_text = _call_gemini(client, prompt, pages, state)
             raw = json.loads(_strip_code_fences(raw_text))
             document = doc_schema.model.model_validate(raw)
             return WorkerResult(

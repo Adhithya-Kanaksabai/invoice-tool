@@ -1,0 +1,756 @@
+{
+  "model": "gemini-3.1-flash-lite",
+  "generated_at": "2026-07-22T15:56:50Z",
+  "overall_extraction_success_rate": 1.0,
+  "overall_field_accuracy": 0.988,
+  "by_schema": {
+    "invoice-v1": {
+      "total_documents": 24,
+      "extraction_success_rate": 1.0,
+      "field_accuracy": 0.992,
+      "per_document": [
+        {
+          "file": "gen_invoice_INV-1001.pdf",
+          "category": "clean_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 411,
+            "total": 3150,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.713,
+            "validation_worker": 0.032,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.745,
+          "estimated_cost_usd": 0.001301,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-1002.pdf",
+          "category": "clean_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 418,
+            "total": 3157,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.337,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.339,
+          "estimated_cost_usd": 0.001312,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-1003.pdf",
+          "category": "clean_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 561,
+            "total": 3300,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 5.693,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 5.695,
+          "estimated_cost_usd": 0.001526,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-1004.pdf",
+          "category": "clean_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 404,
+            "total": 3143,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.335,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.337,
+          "estimated_cost_usd": 0.001291,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-1005.pdf",
+          "category": "clean_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 524,
+            "total": 3263,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.073,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.075,
+          "estimated_cost_usd": 0.001471,
+          "extraction_failed": false,
+          "field_accuracy": 0.964,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-1006.pdf",
+          "category": "clean_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 460,
+            "total": 3199,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.171,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.172,
+          "estimated_cost_usd": 0.001375,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 2
+        },
+        {
+          "file": "gen_invoice_INV-1008.png",
+          "category": "degraded_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 513,
+            "total": 3252,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 3.937,
+            "validation_worker": 0.004,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 3.941,
+          "estimated_cost_usd": 0.001454,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-1009.png",
+          "category": "degraded_synthetic",
+          "tokens": {
+            "prompt": 2747,
+            "candidates": 465,
+            "total": 3212,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.411,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.412,
+          "estimated_cost_usd": 0.001384,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-1010.png",
+          "category": "degraded_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 466,
+            "total": 3205,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 6.401,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 6.403,
+          "estimated_cost_usd": 0.001384,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-2001.png",
+          "category": "degraded_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 577,
+            "total": 3316,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.41,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.412,
+          "estimated_cost_usd": 0.00155,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-2002.png",
+          "category": "degraded_synthetic",
+          "tokens": {
+            "prompt": 2753,
+            "candidates": 550,
+            "total": 3303,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 6.315,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 6.317,
+          "estimated_cost_usd": 0.001513,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-2003.png",
+          "category": "degraded_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 542,
+            "total": 3281,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 3.982,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 3.984,
+          "estimated_cost_usd": 0.001498,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-2004.png",
+          "category": "degraded_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 568,
+            "total": 3307,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 6.919,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 6.921,
+          "estimated_cost_usd": 0.001537,
+          "extraction_failed": false,
+          "field_accuracy": 0.958,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-2005.png",
+          "category": "degraded_synthetic",
+          "tokens": {
+            "prompt": 2717,
+            "candidates": 523,
+            "total": 3240,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.434,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.436,
+          "estimated_cost_usd": 0.001464,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_invoice_INV-2006.png",
+          "category": "degraded_synthetic",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 457,
+            "total": 3196,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 5.247,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 5.248,
+          "estimated_cost_usd": 0.00137,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "invoice_Aaron Hawkins_37425.pdf",
+          "category": "real_photo",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 386,
+            "total": 3125,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.184,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.186,
+          "estimated_cost_usd": 0.001264,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "invoice_Alejandro Grove_24518.pdf",
+          "category": "real_photo",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 473,
+            "total": 3212,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.467,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.469,
+          "estimated_cost_usd": 0.001394,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "invoice_Anna Andreadi_39300.pdf",
+          "category": "real_photo",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 456,
+            "total": 3195,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.204,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.206,
+          "estimated_cost_usd": 0.001369,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "invoice_Arthur Prichep_38316.pdf",
+          "category": "real_photo",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 490,
+            "total": 3229,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.2,
+            "validation_worker": 0.001,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.202,
+          "estimated_cost_usd": 0.00142,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "invoice_Brooke Gillingham_4891.pdf",
+          "category": "real_photo",
+          "tokens": {
+            "prompt": 2739,
+            "candidates": 495,
+            "total": 3234,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.386,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.388,
+          "estimated_cost_usd": 0.001427,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "web_invoice_boostsolutions_salesreceipt.jpg",
+          "skipped": "no ground truth"
+        },
+        {
+          "file": "web_invoice_brandname_lorem.jpg",
+          "category": "web_template",
+          "tokens": {
+            "prompt": 2726,
+            "candidates": 608,
+            "total": 3334,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.099,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.101,
+          "estimated_cost_usd": 0.001594,
+          "extraction_failed": false,
+          "field_accuracy": 0.926,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "web_invoice_paulstevenson_statement.jpg",
+          "skipped": "no ground truth"
+        },
+        {
+          "file": "web_invoice_saffron.jpg",
+          "category": "web_template",
+          "tokens": {
+            "prompt": 2726,
+            "candidates": 521,
+            "total": 3247,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.29,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.292,
+          "estimated_cost_usd": 0.001463,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "web_invoice_tinypint_partial_payment.jpg",
+          "category": "web_template",
+          "tokens": {
+            "prompt": 2726,
+            "candidates": 490,
+            "total": 3216,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 3.565,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 3.567,
+          "estimated_cost_usd": 0.001417,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "web_invoice_yourcompany_discount.jpg",
+          "category": "web_template",
+          "tokens": {
+            "prompt": 2726,
+            "candidates": 502,
+            "total": 3228,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 3.659,
+            "validation_worker": 0.001,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 3.66,
+          "estimated_cost_usd": 0.001435,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "web_invoice_yourcompanyname_canadian_tax.jpg",
+          "skipped": "no ground truth"
+        }
+      ]
+    },
+    "receipt-v1": {
+      "total_documents": 5,
+      "extraction_success_rate": 1.0,
+      "field_accuracy": 0.968,
+      "per_document": [
+        {
+          "file": "gen_receipt_01.pdf",
+          "category": "clean_synthetic",
+          "tokens": {
+            "prompt": 2774,
+            "candidates": 424,
+            "total": 3198,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 3.826,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 3.828,
+          "estimated_cost_usd": 0.001329,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_receipt_02.pdf",
+          "category": "clean_synthetic",
+          "tokens": {
+            "prompt": 2774,
+            "candidates": 471,
+            "total": 3245,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 4.478,
+            "validation_worker": 0.002,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 4.48,
+          "estimated_cost_usd": 0.0014,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 1
+        },
+        {
+          "file": "gen_receipt_03.png",
+          "category": "degraded_synthetic",
+          "tokens": {
+            "prompt": 2774,
+            "candidates": 239,
+            "total": 3013,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 2.927,
+            "validation_worker": 0.0,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 2.927,
+          "estimated_cost_usd": 0.001052,
+          "extraction_failed": false,
+          "field_accuracy": 1.0,
+          "errors": 0,
+          "warnings": 0
+        },
+        {
+          "file": "web_receipt_angelos.jpg",
+          "category": "web_template",
+          "tokens": {
+            "prompt": 2797,
+            "candidates": 485,
+            "total": 3282,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 5.017,
+            "validation_worker": 0.001,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 5.018,
+          "estimated_cost_usd": 0.001427,
+          "extraction_failed": false,
+          "field_accuracy": 0.955,
+          "errors": 0,
+          "warnings": 0
+        },
+        {
+          "file": "web_receipt_russells.jpg",
+          "category": "web_template",
+          "tokens": {
+            "prompt": 2797,
+            "candidates": 458,
+            "total": 3255,
+            "calls": 1
+          },
+          "stage_latency_s": {
+            "extraction_worker": 3.397,
+            "validation_worker": 0.001,
+            "confidence_worker": 0.0,
+            "report_worker": 0.0
+          },
+          "total_latency_s": 3.398,
+          "estimated_cost_usd": 0.001386,
+          "extraction_failed": false,
+          "field_accuracy": 0.889,
+          "errors": 0,
+          "warnings": 1
+        }
+      ]
+    }
+  },
+  "by_category": {
+    "clean_synthetic": {
+      "documents": 8,
+      "extraction_success_rate": 1.0,
+      "field_accuracy": 0.994
+    },
+    "degraded_synthetic": {
+      "documents": 10,
+      "extraction_success_rate": 1.0,
+      "field_accuracy": 0.995
+    },
+    "real_photo": {
+      "documents": 5,
+      "extraction_success_rate": 1.0,
+      "field_accuracy": 1.0
+    },
+    "web_template": {
+      "documents": 6,
+      "extraction_success_rate": 1.0,
+      "field_accuracy": 0.962
+    }
+  },
+  "latency": {
+    "per_stage_s": {
+      "confidence_worker": {
+        "n": 29,
+        "avg_s": 0.0,
+        "p50_s": 0.0,
+        "p95_s": 0.0,
+        "max_s": 0.0
+      },
+      "extraction_worker": {
+        "n": 29,
+        "avg_s": 4.485,
+        "p50_s": 4.335,
+        "p95_s": 6.401,
+        "max_s": 6.919
+      },
+      "report_worker": {
+        "n": 29,
+        "avg_s": 0.0,
+        "p50_s": 0.0,
+        "p95_s": 0.0,
+        "max_s": 0.0
+      },
+      "validation_worker": {
+        "n": 29,
+        "avg_s": 0.003,
+        "p50_s": 0.002,
+        "p95_s": 0.004,
+        "max_s": 0.032
+      }
+    },
+    "end_to_end_s": {
+      "n": 29,
+      "avg_s": 4.488,
+      "p50_s": 4.337,
+      "p95_s": 6.403,
+      "max_s": 6.921
+    }
+  },
+  "tokens": {
+    "documents_measured": 29,
+    "total": {
+      "prompt": 79600,
+      "candidates": 13937,
+      "total": 93537,
+      "calls": 29
+    },
+    "avg_prompt_per_document": 2744.828,
+    "avg_candidates_per_document": 480.586,
+    "avg_total_per_document": 3225.414,
+    "avg_calls_per_document": 1.0
+  },
+  "cost": {
+    "estimated_total_usd": 0.040806,
+    "estimated_avg_usd_per_document": 0.001407,
+    "rate_label": "estimated at $0.25/1M input tokens and $1.50/1M output tokens (rate as of 2026-07-22)"
+  },
+  "failures": {
+    "count": 0,
+    "most_common_reason": null,
+    "reason_counts": {}
+  }
+}

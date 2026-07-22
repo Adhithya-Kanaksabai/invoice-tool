@@ -53,6 +53,14 @@ from a *previous* session, not just earlier in the same batch). Persistence fail
 surfaced loudly, never swallowed — a save failing doesn't block showing the result that already
 succeeded, but it's not silently dropped either.
 
+On top of all that sits a **measurement layer**, which is the difference between "it extracts
+invoices" and "I know what this system costs, how fast it is, and which kinds of document it gets
+wrong." Every Gemini call reports its own token usage, which gets summed per document (including
+retries — a call that failed still burned quota). The orchestrator times every worker it runs. The
+eval scores accuracy separately per *category* of document, not as one blended average. And all of
+it lands in a dated report card under `evals/reports/` — markdown for a human, JSON alongside it
+so a future version can diff two runs mechanically.
+
 ## Key decisions and the reasoning
 
 - **Validation is two separate layers, not one function.** Schema validation asks "is this
@@ -81,6 +89,22 @@ succeeded, but it's not silently dropped either.
   (`"invoice-v1"`, `"receipt-v1"`) to its model, business rules, and retry groups. Before this,
   `Invoice` was imported by name in three different files. Now the validation and confidence code
   never imports a specific document type directly — they take a schema ID and look everything up.
+
+- **Tokens are measured; cost is derived and labelled as such.** Token counts come straight off
+  each API response's `usage_metadata` — they're a hard fact. Cost is tokens × a published price
+  that Google can change without telling me, so every cost number this project prints carries the
+  rate and the date I read it ("estimated at $0.25/1M input, $1.50/1M output, rate as of
+  2026-07-22"). If the configured model has no rate on file, it reports "unknown" rather than
+  quietly applying the wrong one and showing a confident wrong number. Presenting a derived
+  estimate with the same confidence as a measurement is how you end up defending a number you
+  can't actually defend.
+
+- **One blended accuracy number is close to useless.** The eval reports field accuracy per
+  document *category* — clean synthetic, degraded synthetic, real photo, web template — because a
+  single average lets a strong score on the easy half hide a weak score on the hard half. This
+  paid off immediately: see the evaluation section below, where the blended 98.8% turns out to be
+  hiding a 96.2% on web templates and a 100% on real photos, which is the *opposite* of what I'd
+  have guessed.
 
 - **Citation, not bounding boxes.** Real grounding — cropping the exact region a value came from
   — needs a layout model, which is real infrastructure with no guarantee of working reliably on
@@ -328,6 +352,40 @@ re-ran the same invoice and confirmed cross-run duplicate detection fired correc
 same Postgres instance. `db.py`'s "DATABASE_URL from env, SQLite default" design meant this needed
 zero code changes — the same "config, not code" shape the Gemini model swap already proved once.
 
+**Adding measurement immediately falsified two things I believed about the system.** The point of
+instrumenting tokens, latency and per-category accuracy was to have real numbers to talk about.
+What it actually did first was contradict me twice:
+
+1. **The agentic Correction Worker never fires on the eval set — 29 documents, 29 API calls,
+   exactly 1.00 calls per document.** I'd been describing the correction loop as a working,
+   exercised part of the pipeline. It works (it's been triggered by hand, and that's how the
+   currency-string bug above was found), but the eval set *never triggers it*, because none of the
+   29 documents produce a business-validation error that survives to the retry stage. So the eval
+   numbers say nothing at all about correction quality — they only measure first-pass extraction.
+   That's a real gap in what the eval covers, and I only know about it because the token counter
+   made "how many calls did that actually take" a visible number instead of an assumption. Nothing
+   would have shown this otherwise: accuracy was fine, the code was fine, and the test suite
+   covers the correction logic in isolation.
+
+2. **Re-running the identical eval gave a different number: 98.8% this run against 99.1%
+   recorded previously**, same 29 documents, same model, same prompts. Nothing regressed — that's
+   run-to-run variance from a non-deterministic model, and it's about three or four field
+   observations out of ~300 landing differently. Worth stating plainly rather than quietly
+   updating the number and implying it's a constant: a single eval run on 29 documents has a
+   margin of roughly ±0.5% that no amount of formatting can remove. It's also the concrete
+   argument for why the report writes a machine-readable JSON twin alongside the markdown —
+   comparing runs is the only way to tell a real regression apart from this noise, and you can't
+   compare runs you didn't record.
+
+**Per-stage latency confirmed the boring answer, which is the useful one.** Extraction averages
+4.485s; every deterministic stage in the pipeline (schema validation, business rules, confidence,
+report building) runs in **under 4 milliseconds combined**. So ~99.9% of wall-clock time is the
+one network call to Gemini, and essentially none of it is my own logic. That's worth having
+measured rather than assumed, because it settles where optimization effort would and wouldn't
+pay off: batching or caching calls is the only lever that matters, and micro-optimizing the
+validation rules would be completely wasted work. The p95 (6.401s) versus p50 (4.335s) spread is
+API-side variance, not anything in this codebase.
+
 ## Evaluation results
 
 Test set: **29 hand-verified documents** (24 invoices, 5 receipts), up from the original 5 — now
@@ -337,19 +395,55 @@ synthetic images, AND (new this round) **real-world documents**: genuine phone-p
 (skewed, glare, background clutter) and a range of real invoice templates pulled from the web —
 not just synthetically degraded PDFs.
 
-**Full run, all 29 documents, on `gemini-3.1-flash-lite`:**
+**Full run, all 29 documents, on `gemini-3.1-flash-lite` (2026-07-22):**
 
 ```
 Overall extraction success rate: 100.0%  (29/29)
-Overall field-level accuracy:    99.1%
+Overall field-level accuracy:    98.8%
 
-invoice-v1: extraction success 100.0%  field accuracy 99.6%  (24/24)
+invoice-v1: extraction success 100.0%  field accuracy 99.2%  (24/24)
 receipt-v1: extraction success 100.0%  field accuracy 96.8%  (5/5)
 ```
 
-The gap from 100% (the old all-synthetic number) to 99.1% is the actual point: **real-world
-documents produce real errors that synthetic degradation never did.** Every miss traced to a
-specific, understood cause — not noise: a receipt with a two-line header creating genuine
+**Accuracy by document category** — the number that actually tells you something:
+
+| Category | Docs | Field accuracy |
+|---|---|---|
+| `real_photo` (real vendor templates) | 5 | 100.0% |
+| `degraded_synthetic` (blur/rotate/noise/JPEG) | 10 | 99.5% |
+| `clean_synthetic` (generated, undegraded) | 8 | 99.4% |
+| `web_template` (third-party web templates) | 6 | 96.2% |
+
+That ordering is the interesting part, and it's the reverse of the intuitive one. **Deliberate
+image degradation barely hurts this model at all** — blurred, rotated, noisy, downscaled synthetic
+invoices score 99.5%, essentially tied with the clean originals they were made from. What actually
+costs accuracy is **layout variety**: unfamiliar third-party web templates score 96.2%, the worst
+of the four, on perfectly legible images. The failure mode of a modern vision model on documents
+isn't "can't read the pixels," it's "doesn't know which number on this unfamiliar layout is the
+one I asked for." All the effort that went into generating harder and harder degraded images was
+effort spent on the wrong axis; the way to actually stress this system is more *layouts*, not more
+blur. I would not have learned that from a blended average — the two categories cancel out in it.
+
+**Cost and speed, measured on the same run:**
+
+```
+Tokens:   79,600 input / 13,937 output   (avg 2,745 in / 481 out per document)
+Calls:    29 for 29 documents            (1.00 per document — correction never fired)
+Latency:  4.488s end-to-end avg          (p50 4.337s, p95 6.403s, max 6.921s)
+          extraction 4.485s of that; all other stages under 4ms combined
+Cost:     $0.0408 total, ~$0.0014 per document
+          (estimated at $0.25/1M input + $1.50/1M output, rate as of 2026-07-22)
+```
+
+A tenth of a cent per document, about four and a half seconds each. The cost figure is an
+estimate derived from Google's published rate; the token counts underneath it are measured and
+don't change if the price does.
+
+The gap from 100% (the old all-synthetic number) to ~99% is the actual point: **real-world
+documents produce real errors that synthetic degradation never did** — and now that accuracy is
+broken out by category, that statement gets sharper: it's specifically the *unfamiliar layouts*
+(third-party web templates, 96.2%) doing the damage, not the degraded images (99.5%) I'd spent
+the most effort generating. Every miss traced to a specific, understood cause — not noise: a receipt with a two-line header creating genuine
 merchant-name ambiguity (institution name vs. specific outlet), a stock marketing template whose
 own printed subtotal/total don't reconcile with its own line items (decorative placeholder numbers,
 not a real transaction), and — the one genuine extraction bug found — a receipt with two different
@@ -417,6 +511,35 @@ correction step had actually run. The eval set proves accuracy on documents that
 shape; it says nothing about what happens when they're not — that needs someone actually trying to
 break it.
 
+**What does this system cost to run, and how do you know?** About a tenth of a cent per document
+($0.0014) and roughly 4.5 seconds, on `gemini-3.1-flash-lite`. I know the token half for certain
+because every Gemini response reports its own usage and I sum it per document, including retries —
+a call that failed still cost money, so it still counts. The dollar figure is derived from Google's
+published rate, so it's labelled as an estimate with the rate and the date I read it. If someone
+asks me to defend the cost number, the honest answer is "the tokens are measured, the price is
+whatever Google charged on 22 July 2026."
+
+**Where does the time actually go?** 99.9% of it is the single vision-model call. Every
+deterministic stage — schema validation, business rules, confidence, report building — totals
+under 4 milliseconds. I measured that rather than assumed it, and it settles the optimization
+question: the only lever worth pulling is fewer or cached API calls; tuning my own validation code
+would be measurably pointless.
+
+**Your eval says 98.8% — how much should I trust that?** Less than the third significant figure
+suggests. Re-running the identical eval on the identical 29 documents gave 99.1% previously and
+98.8% this time, with no code change in between — that's a non-deterministic model moving three or
+four field observations out of ~300. So it's a correctness signal with roughly ±0.5% of run-to-run
+noise on a small hand-curated set, not a benchmark score. That's also why each run is written to a
+dated JSON file: telling a real regression apart from that noise needs two recorded runs to
+compare, which is the next thing I'd build.
+
+**What's the biggest thing your eval doesn't cover?** The agentic Correction Worker. The
+instrumentation showed exactly 1.00 API calls per document across all 29 — meaning none of them
+ever produce a validation error that survives to the retry stage, so the correction loop is never
+exercised by the eval at all. It works, and it's unit-tested and has been triggered by hand, but
+the accuracy numbers measure first-pass extraction only. I'd want deliberately correction-inducing
+documents in the set before claiming the eval says anything about that path.
+
 **You built an OCR cross-check — where is it?** Removed it. I tested it against real diverse
 documents with a dedicated tuning script rather than assuming it worked, and it had a 0% catch
 rate on real errors across 308 field observations, plus a specific false-reassurance failure mode
@@ -428,7 +551,7 @@ photos isn't) is worth more than the feature would have been.
 
 ---
 
-_Last updated: 2026-07-22 — includes the SQLAlchemy/Alembic persistence layer (content-hash cache,
+_Last updated: 2026-07-22, branched from commit `d755fbe` — includes the SQLAlchemy/Alembic persistence layer (content-hash cache,
 cross-run duplicate detection), a Streamlit styling pass, five bugs found via manual adversarial
 testing (graceful failure messages, document-type mismatch detection, a real line-item column bug,
 and an Agentic Correction Worker UI mislabel), a docs polish pass (README rewritten from 410 to
@@ -444,4 +567,13 @@ traceback on PDF upload (an unmerged fix plus a real gap in the ingest-layer's o
 handling), a raw `KeyError` from an unguarded `GEMINI_API_KEY` lookup, and finally a raw SQL
 error from a database schema that had never been created (Streamlit Cloud has no pre-start hook
 to run Alembic, unlike local dev and Docker) — all three now closed, the last one just by wiring
-up an `init_db()` helper that already existed but had never been called from `app.py`._
+up an `init_db()` helper that already existed but had never been called from `app.py`.
+
+Most recent addition: an **observability and report-card layer** on the eval pipeline — real token
+counts read from each Gemini response, per-stage wall-clock latency measured in the orchestrator,
+a labelled cost estimate, dataset stratification into four document categories via
+`tests/manifest.json`, and a generated dated report card (`evals/reports/eval_<date>.md` plus a
+JSON twin). It immediately produced two findings that contradicted things I'd been saying about
+the project: the agentic correction loop is never triggered by the eval set at all (1.00 API calls
+per document), and re-running the identical eval moves the headline accuracy by ~0.3% because the
+model is non-deterministic. Test suite grew from 87 to 122._
