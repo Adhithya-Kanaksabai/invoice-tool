@@ -464,6 +464,59 @@ correctness signal on the specific range of formats/degradations actually tested
 general robustness — and it's a small enough error count (roughly 3 wrong fields out of ~300+
 observations) that no confidence threshold could be meaningfully tuned from it this round.
 
+## An external benchmark, and the bug it found that the in-house set couldn't
+
+That last caveat — "not a standard public benchmark" — was the actual reason to go get one. All 29
+documents in this project's own eval set were hand-picked, which means every one of them has a
+legible date, a readable total, a normal layout. That's not neutral testing; it's testing against
+documents that were already screened to work. So I ran the pipeline against **CORD-v2**
+(`naver-clova-ix/cord-v2`, CC-BY-4.0), a public, real-world receipt dataset — genuine phone-photo
+Indonesian retail receipts, nobody curated them for legibility, and other extraction projects get
+measured against the same dataset. `tests/fetch_cord_benchmark.py` pulls 20 of them and builds a
+deliberately narrow ground truth (just `total` and item descriptions — CORD's own annotations for
+merchant/date/tax are inconsistent enough, dict-vs-list menus and "." used as a thousands separator
+in some receipts and a comma in others, that guessing at those fields would have meant scoring my
+own guesses, not CORD's data).
+
+**First live run: 20% extraction success.** Not a typo — 4 documents out of 20 produced any result
+at all; the other 16 hard-failed. That's a genuinely bad headline number, and I didn't touch
+anything to make it look better before reporting it. I traced it instead: **all 16 failures were
+the exact same cause** — `Receipt.transaction_date` was a hard-required field, and I opened one of
+the failing images directly (`cord_014.jpg`) to check whether that was reasonable. It wasn't: the
+receipt's header — exactly where a date would be — is genuinely too blurry for a human to read,
+not just the model. Real phone photos are like this. My own 29 documents never had one, because I
+picked documents where every field was legible when I built the set.
+
+**The fix:** made `transaction_date` `Optional`, the same pattern `Invoice.due_date` already uses.
+Checked first whether anything downstream depended on it being present — no business rule in
+`business_validate_receipt.py` touches it at all, and `persistence.py`'s document-date column was
+already nullable and already guarded (`date.fromisoformat(raw_date) if raw_date else None`) from
+when it was written, so the fix was a single field annotation, not a cascade. The deeper reason it
+works: `extract.py`'s prompt already had a `field_status: "missing"` path designed for exactly this
+case ("use missing only if the field is genuinely absent... do not guess silently") — but a
+required Pydantic field forces the model to invent *something* regardless of what field_status says,
+because the JSON schema embedded in the prompt marks it required. Making the field Optional doesn't
+just stop the crash, it lets the model actually tell the truth when a date isn't there, instead of
+fabricating a plausible-looking one to satisfy the schema. A fabricated date is worse than a missing
+one — it's silently wrong in a way `None` isn't.
+
+**Re-ran the identical 20 documents after the fix:**
+
+```
+                    Before        After
+Extraction success: 20.0%   ->    100.0%
+Field accuracy:      84.2%  ->     89.4%   (total + item descriptions, of the ones that extracted)
+```
+
+Both runs are committed (`evals/benchmarks/cord_v2_2026-07-22_before-optional-transaction_date.json`
+and `evals/benchmarks/cord_v2_2026-07-22.json`) — an interviewer can open both.
+
+This is the whole point of testing against documents you didn't get to choose: a benchmark you can't
+curate is the only kind that tells you something you didn't already believe. The remaining field
+accuracy gap (89.4%, not 100%) is genuine per-field misreads on messy real photos — not another
+structural bug — which is a much more boring, much more believable number than either 20% or 100%
+would have been on their own.
+
 ## Anticipated interview questions
 
 **Why split validation into two layers instead of one function?** Because "malformed" and
@@ -540,6 +593,26 @@ exercised by the eval at all. It works, and it's unit-tested and has been trigge
 the accuracy numbers measure first-pass extraction only. I'd want deliberately correction-inducing
 documents in the set before claiming the eval says anything about that path.
 
+**Why not just use OCR instead of an LLM — isn't it cheaper?** That argument is mostly stale for a
+flash-tier vision model. I measured mine: $0.0014 per document, about 8x cheaper than the enterprise
+tier of Mindee (a dedicated OCR API), and roughly two orders of magnitude cheaper than the
+$0.20-$1/document figure people quote when making that argument, because that figure assumes a
+frontier-model price point that small vision models have made obsolete. What OCR still wins on is
+determinism and latency — same input always gives the same output, in milliseconds, not seconds —
+which is exactly why the one place in this pipeline that must never vary (subtotal + tax == total)
+is a plain Python function, not a model call. I'm not guessing at this trade-off: I built an
+independent OCR cross-check specifically to test whether OCR could add value here, measured it at a
+0% real catch rate, and deleted it (below).
+
+**What did testing against a public dataset find that your own eval set couldn't?** A real bug: my
+Receipt schema required a transaction date, and a public dataset of real phone-photo receipts
+(CORD-v2) has photos too blurry to read a date off at all — 16 of 20 documents hard-failed on
+exactly that field. My own 29-document set never had this problem because I hand-picked every
+document to be legible. Fixed by making the field Optional (same pattern `Invoice.due_date` already
+used) and confirmed nothing downstream depended on it being required. Re-ran the identical 20
+documents afterward: extraction success went from 20% to 100%. Both runs are committed to the repo,
+so it's checkable, not just claimed.
+
 **You built an OCR cross-check — where is it?** Removed it. I tested it against real diverse
 documents with a dedicated tuning script rather than assuming it worked, and it had a 0% catch
 rate on real errors across 308 field observations, plus a specific false-reassurance failure mode
@@ -569,11 +642,20 @@ error from a database schema that had never been created (Streamlit Cloud has no
 to run Alembic, unlike local dev and Docker) — all three now closed, the last one just by wiring
 up an `init_db()` helper that already existed but had never been called from `app.py`.
 
-Most recent addition: an **observability and report-card layer** on the eval pipeline — real token
-counts read from each Gemini response, per-stage wall-clock latency measured in the orchestrator,
-a labelled cost estimate, dataset stratification into four document categories via
-`tests/manifest.json`, and a generated dated report card (`evals/reports/eval_<date>.md` plus a
-JSON twin). It immediately produced two findings that contradicted things I'd been saying about
-the project: the agentic correction loop is never triggered by the eval set at all (1.00 API calls
-per document), and re-running the identical eval moves the headline accuracy by ~0.3% because the
-model is non-deterministic. Test suite grew from 87 to 122._
+An **observability and report-card layer** on the eval pipeline — real token counts read from each
+Gemini response, per-stage wall-clock latency measured in the orchestrator, a labelled cost
+estimate, dataset stratification into four document categories via `tests/manifest.json`, and a
+generated dated report card (`evals/reports/eval_<date>.md` plus a JSON twin). It immediately
+produced two findings that contradicted things I'd been saying about the project: the agentic
+correction loop is never triggered by the eval set at all (1.00 API calls per document), and
+re-running the identical eval moves the headline accuracy by ~0.3% because the model is
+non-deterministic. Test suite grew from 87 to 122.
+
+Most recent addition: an **external benchmark against CORD-v2** (a public, real-world receipt
+dataset, run separately from the hand-verified 29-document set) — which immediately found a real
+bug the in-house set structurally couldn't: `Receipt.transaction_date` was hard-required, and CORD's
+genuine phone-photo receipts include ones too blurry to read a date off, causing 16 of 20 documents
+to fail extraction outright (20% success). Fixed by making the field Optional and confirmed nothing
+downstream depended on it being required; re-ran the identical 20 documents and confirmed the fix —
+100% extraction success, 89.4% field accuracy on the ones that extract. Both the before and after
+runs are committed to the repo. Test suite grew from 122 to 135._

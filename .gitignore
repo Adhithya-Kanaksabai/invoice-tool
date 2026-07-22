@@ -5,3 +5,4 @@ __pycache__/
 tests/output/
 *.db
 *.db-journal
+tests/cord_benchmark/.cache/

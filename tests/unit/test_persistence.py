@@ -8,7 +8,7 @@ from datetime import date, datetime
 
 from orchestrator import PipelineResult
 from persistence import check_natural_id_exists, find_cached_document, persist_pipeline_result
-from schema import Flag, Invoice, LineItem
+from schema import Flag, Invoice, LineItem, Receipt, ReceiptItem
 
 
 def make_invoice(**overrides) -> Invoice:
@@ -25,10 +25,24 @@ def make_invoice(**overrides) -> Invoice:
     return Invoice(**defaults)
 
 
-def make_result(document, flags=None, confidence=None, history=None) -> PipelineResult:
+def make_receipt(**overrides) -> Receipt:
+    defaults = dict(
+        merchant_name="Corner Cafe",
+        transaction_date=date(2024, 3, 15),
+        items=[ReceiptItem(description="Latte", quantity=1, unit_price=4.5, amount=4.5)],
+        subtotal=4.5,
+        total=4.5,
+    )
+    defaults.update(overrides)
+    return Receipt(**defaults)
+
+
+def make_result(
+    document, flags=None, confidence=None, history=None, schema_id="invoice-v1"
+) -> PipelineResult:
     return PipelineResult(
         final_state={
-            "schema_id": "invoice-v1",
+            "schema_id": schema_id,
             "document": document,
             "flags": flags or [],
             "confidence": confidence or {},
@@ -180,7 +194,10 @@ def test_content_hash_and_natural_id_dedup_are_independent_signals(db_session):
 def test_correction_history_empty_when_correction_never_fired(db_session):
     result = make_result(make_invoice())
     persist_pipeline_result(
-        result, original_filename="clean.pdf", content_hash="hash-clean", started_at=datetime.utcnow()
+        result,
+        original_filename="clean.pdf",
+        content_hash="hash-clean",
+        started_at=datetime.utcnow(),
     )
 
     import db
@@ -239,3 +256,29 @@ def test_check_natural_id_exists_degrades_to_false_on_db_error(monkeypatch):
 
     monkeypatch.setattr(persistence, "get_session", _broken_session)
     assert check_natural_id_exists("invoice-v1", "INV-9001") is False
+
+
+# --- receipts with no legible transaction_date ------------------------------
+
+
+def test_persist_receipt_with_no_transaction_date_stores_null_document_date(db_session):
+    """
+    transaction_date is Optional on Receipt (unlike Invoice.invoice_date) --
+    a real phone-photo receipt can be too blurry for a date to be legible at
+    all (see the CORD-v2 external benchmark: 16/20 extraction failures traced
+    to this field being hard-required against genuinely illegible photos).
+    Persisting one with no date must not crash; document_date is nullable on
+    the Document model specifically for this.
+    """
+    result = make_result(make_receipt(transaction_date=None), schema_id="receipt-v1")
+    persist_pipeline_result(
+        result,
+        original_filename="blurry_receipt.jpg",
+        content_hash="hash-no-date",
+        started_at=datetime.utcnow(),
+    )
+
+    cached = find_cached_document("hash-no-date")
+    assert cached is not None
+    assert cached["transaction_date"] is None
+    assert cached["merchant_name"] == "Corner Cafe"

@@ -1,0 +1,110 @@
+{
+  "benchmark": "CORD-v2 (naver-clova-ix/cord-v2, external, CC-BY-4.0)",
+  "generated_at": "2026-07-22T18:04:34Z",
+  "total_documents": 20,
+  "extraction_success_rate": 1.0,
+  "field_accuracy": 0.894,
+  "note": "Ground truth here only covers `total` and item descriptions -- narrower than the hand-verified 29-document set's full field coverage. See tests/fetch_cord_benchmark.py for why.",
+  "per_document": [
+    {
+      "file": "cord_000.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.667
+    },
+    {
+      "file": "cord_001.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_002.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.667
+    },
+    {
+      "file": "cord_003.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_004.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_005.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_006.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.8
+    },
+    {
+      "file": "cord_007.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.667
+    },
+    {
+      "file": "cord_008.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.667
+    },
+    {
+      "file": "cord_009.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_010.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_011.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.5
+    },
+    {
+      "file": "cord_012.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_013.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_014.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_015.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.5
+    },
+    {
+      "file": "cord_016.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_017.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_018.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_019.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    }
+  ]
+}
