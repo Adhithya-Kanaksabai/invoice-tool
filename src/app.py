@@ -41,6 +41,7 @@ except Exception:
     pass
 
 from confidence import confidence_worker
+from db import init_db
 from export import export_csv, export_json
 from extract import extraction_worker
 from ingest import compute_content_hash
@@ -50,6 +51,15 @@ from report import report_worker
 from retry import correction_worker
 from schema_registry import get_list_field_name, get_schema
 from validate import validation_worker
+
+# Local dev and Docker create the schema via `alembic upgrade head` (see
+# Dockerfile's CMD) before app.py ever runs. Streamlit Community Cloud has no
+# equivalent pre-start hook — it just runs this file directly — so a fresh
+# ephemeral SQLite file there would otherwise have no tables at all.
+# init_db()'s create_all() is idempotent (checks existing tables first), so
+# this is a safe no-op anywhere Alembic already ran, and the actual fix
+# wherever it hasn't.
+init_db()
 
 st.set_page_config(page_title="Invoice Intelligence Tool", page_icon="🧾", layout="wide")
 

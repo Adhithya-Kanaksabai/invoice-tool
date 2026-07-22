@@ -297,6 +297,25 @@ dependency a worker touches (the vision API, the filesystem, an env var) needs i
 failure boundary — "wrap the one call I was thinking about" isn't the same guarantee as "nothing
 in this worker can throw past its own return."
 
+**A third redeploy, a third bug: extraction finally worked, but persisting the result failed —
+`sqlite3.OperationalError: no such table: pipeline_runs`.** With Poppler and the API key both
+fixed, a real end-to-end extraction succeeded on the live app for the first time — but saving it
+threw a raw SQL error (caught by `app.py`'s own try/except around persistence, so at least not a
+full traceback this time, but still leaking a raw exception string with SQL parameters into the
+UI). Root cause: this project's schema is created via Alembic (`alembic upgrade head`) — run
+manually in local dev, and baked into the Docker image's `CMD` — but Streamlit Community Cloud
+has no pre-start hook at all, it just executes `app.py` directly. A fresh ephemeral SQLite file
+there had literally never had its tables created. The fix already existed and was never wired
+up: `db.py` has an `init_db()` docstring-labeled "dev/test convenience: create tables directly
+from the models, no migration history" — calling `Base.metadata.create_all(engine)`, which is
+idempotent (checks existing tables first). Added one line, `init_db()`, near the top of
+`app.py`, right after the secrets bridge — a safe no-op anywhere Alembic already ran (local dev,
+Docker), and the actual fix on Streamlit Cloud where nothing else ever would. Three consecutive
+raw-error redeploys in a row (Poppler → API key → DB schema) is itself the finding worth keeping:
+each one was a real dependency the app has on its runtime environment that local dev and Docker
+both silently satisfy for you, which is exactly why they never surfaced until a genuinely
+different deployment target was tried.
+
 **Docker + docker-compose (Postgres), verified end-to-end, not just written and assumed to work.**
 Added a `Dockerfile` (Python 3.11-slim, `apt-get install poppler-utils` baked in — the actual
 justification for Docker here, since a Poppler-not-on-PATH mid-session install was a real earlier
@@ -419,8 +438,10 @@ app couldn't otherwise produce savable image files), Docker/docker-compose with 
 end-to-end against a real container (migrations, a live extraction, and cross-run duplicate
 detection all confirmed working, not just assumed), a second README pass trimming ~130 lines
 of prose down to ~90 with a Mermaid flowchart replacing the ASCII architecture diagram, Streamlit
-Community Cloud deployment support (`packages.txt` for Poppler, secrets bridging), and two more
-adversarial-testing bugs found on the live deployment itself, back to back — a raw traceback on
-PDF upload (an unmerged fix plus a real gap in the ingest-layer's own error handling), then, on
-the same redeploy, a second raw traceback from an unguarded `GEMINI_API_KEY` lookup — both now
-closed with explicit failure boundaries around every external dependency each worker touches._
+Community Cloud deployment support (`packages.txt` for Poppler, secrets bridging), and three
+straight adversarial-testing bugs found on the live deployment itself, one per redeploy — a raw
+traceback on PDF upload (an unmerged fix plus a real gap in the ingest-layer's own error
+handling), a raw `KeyError` from an unguarded `GEMINI_API_KEY` lookup, and finally a raw SQL
+error from a database schema that had never been created (Streamlit Cloud has no pre-start hook
+to run Alembic, unlike local dev and Docker) — all three now closed, the last one just by wiring
+up an `init_db()` helper that already existed but had never been called from `app.py`._
