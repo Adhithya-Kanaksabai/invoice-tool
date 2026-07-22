@@ -76,6 +76,12 @@ venv/Scripts/streamlit run src/app.py
 Eval suite: `python src/eval.py` · Unit tests: `pip install -r requirements-dev.txt && pytest tests/unit`
 · Regenerate test set: `pip install -r requirements-test.txt && python tests/generate_sample_invoices.py`
 
+**Deploy (Streamlit Community Cloud, free):** point it at this repo, main file `src/app.py` —
+`packages.txt` (Poppler) is already committed for you. Add `GEMINI_API_KEY` under the app's
+Secrets. Without a `DATABASE_URL` secret it falls back to SQLite on ephemeral storage (fine for a
+demo, wiped on redeploy); point `DATABASE_URL` at any free-tier Postgres (Neon, Supabase) for
+persistence that survives restarts.
+
 ![Agentic Correction Worker panel](docs/screenshots/agentic-correction-panel.png)
 
 ## Limitations
