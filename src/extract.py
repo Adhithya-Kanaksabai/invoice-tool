@@ -133,6 +133,23 @@ def _describe_last_error(error: Exception | None) -> str:
     return str(error)
 
 
+def _describe_ingest_error(error: Exception) -> str:
+    """
+    load_page_images() failures are a different class from extraction
+    failures above — the file never even made it to the model, so there's
+    no "attempt N of M" framing, just "this file couldn't be opened." A
+    raw exception here (e.g. pdf2image's PDFInfoNotInstalledError when
+    Poppler is missing from the host) is exactly the kind of thing that
+    must never reach the Streamlit UI as a bare traceback.
+    """
+    type_name = type(error).__name__
+    if "PDFInfoNotInstalled" in type_name or "PDFPageCount" in type_name:
+        return "the server is missing a required PDF component — please try again shortly"
+    if isinstance(error, ValueError):
+        return str(error)  # our own "Unsupported file type: .xyz" message
+    return f"the file appears to be corrupt or unreadable ({type_name})"
+
+
 def _call_gemini(client: genai.Client, prompt: str, pages: list[PageImage]) -> str:
     response = client.models.generate_content(
         model=MODEL_NAME,
@@ -167,7 +184,18 @@ def extraction_worker(state: dict) -> WorkerResult:
     doc_schema = get_schema(schema_id)
     prompt = _build_prompt(schema_id)
 
-    pages = state.get("pages") or load_page_images(state["file_path"])
+    if state.get("pages"):
+        pages = state["pages"]
+    else:
+        try:
+            pages = load_page_images(state["file_path"])
+        except Exception as e:
+            return WorkerResult(
+                status="failed",
+                state=state,
+                reason=f"Couldn't read this file — {_describe_ingest_error(e)}.",
+            )
+
     content_hash = state.get("content_hash")
     if content_hash is None and "file_path" in state:
         content_hash = compute_content_hash(state["file_path"])

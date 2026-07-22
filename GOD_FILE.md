@@ -260,6 +260,24 @@ completely wrong. Doing that by hand found:
    "Force re-extraction (skip cache)" checkbox in the UI, wired to the `skip_cache` state key
    `eval.py` already used internally — no new mechanism, just exposing an existing one.
 
+**A raw traceback leaked on the live deployment because the fix for it hadn't actually shipped
+yet.** After deploying to Streamlit Community Cloud, uploading a sample PDF threw
+`pdf2image.exceptions.PDFInfoNotInstalledError` straight into the UI as a full traceback — the
+exact class of bug #1 above (raw exception dumped to the user) but in a place that hadn't been
+patched: `extract.py`'s graceful-error wrapping only covered the vision-model call
+(`_describe_last_error`), not the file-ingest step above it (`load_page_images()`), which ran
+completely outside any try/except. Root cause of *why* Poppler was missing at all: the PR adding
+`packages.txt` (Streamlit Cloud's mechanism for installing apt-level dependencies like Poppler)
+had been opened but not yet merged to `main` — the live deployment was still running the
+pre-fix commit. Two separate fixes: merged the pending PR for the actual Poppler installation,
+and closed the ingest-layer gap itself by wrapping `load_page_images()` in `extraction_worker`
+with the same "hard failure → clean `WorkerResult`" pattern already used for the extraction call,
+plus a new `_describe_ingest_error()` helper that recognizes a missing-Poppler exception by class
+name specifically (so the fix holds even if this exact dependency issue recurs) and falls back to
+a generic "file appears to be corrupt or unreadable" message otherwise — never the raw exception
+text or a traceback. Verified by reproducing the exact failure against the live deployed app
+first, not assuming the fix would work.
+
 **Docker + docker-compose (Postgres), verified end-to-end, not just written and assumed to work.**
 Added a `Dockerfile` (Python 3.11-slim, `apt-get install poppler-utils` baked in — the actual
 justification for Docker here, since a Poppler-not-on-PATH mid-session install was a real earlier
@@ -372,7 +390,7 @@ photos isn't) is worth more than the feature would have been.
 
 ---
 
-_Last updated: 2026-07-21 — includes the SQLAlchemy/Alembic persistence layer (content-hash cache,
+_Last updated: 2026-07-22 — includes the SQLAlchemy/Alembic persistence layer (content-hash cache,
 cross-run duplicate detection), a Streamlit styling pass, five bugs found via manual adversarial
 testing (graceful failure messages, document-type mismatch detection, a real line-item column bug,
 and an Agentic Correction Worker UI mislabel), a docs polish pass (README rewritten from 410 to
@@ -380,6 +398,9 @@ and an Agentic Correction Worker UI mislabel), a docs polish pass (README rewrit
 MIT LICENSE added, and real screenshots captured via a one-off Playwright script since the running
 app couldn't otherwise produce savable image files), Docker/docker-compose with Postgres, verified
 end-to-end against a real container (migrations, a live extraction, and cross-run duplicate
-detection all confirmed working, not just assumed), and a second README pass trimming ~130 lines
-of prose down to ~90 with a Mermaid flowchart replacing the ASCII architecture diagram — the first
-version was still too dense to actually get read._
+detection all confirmed working, not just assumed), a second README pass trimming ~130 lines
+of prose down to ~90 with a Mermaid flowchart replacing the ASCII architecture diagram, Streamlit
+Community Cloud deployment support (`packages.txt` for Poppler, secrets bridging), and a sixth
+adversarial-testing bug found on the live deployment itself — a raw traceback on PDF upload,
+traced to an unmerged fix plus a real gap in the ingest-layer's own error handling, both now
+closed._
