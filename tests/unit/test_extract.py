@@ -86,3 +86,23 @@ def test_extraction_worker_returns_graceful_failure_on_ingest_error(monkeypatch)
     assert "Unable to get page count" not in (result.reason or "")
     assert "Traceback" not in (result.reason or "")
     assert "try again" in (result.reason or "")
+
+
+def test_extraction_worker_returns_graceful_failure_without_api_key(monkeypatch):
+    # Reproduces a real crash seen on the live deployment: os.environ["GEMINI_API_KEY"]
+    # was accessed unguarded, so a missing secret raised a bare KeyError straight to the UI.
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    result = extraction_worker(
+        {
+            "file_path": "whatever.pdf",
+            "schema_id": "invoice-v1",
+            "pages": ["dummy-page"],  # truthy -> skips load_page_images entirely
+            "content_hash": "deadbeef",  # skips compute_content_hash reading a real file
+            "skip_cache": True,  # skips the DB-backed cache lookup
+        }
+    )
+
+    assert result.status == "failed"
+    assert "GEMINI_API_KEY" in (result.reason or "")
+    assert "Traceback" not in (result.reason or "")

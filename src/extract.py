@@ -218,7 +218,14 @@ def extraction_worker(state: dict) -> WorkerResult:
             except Exception:
                 pass  # stored data no longer validates (e.g. schema changed since) — extract for real
 
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    try:
+        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    except KeyError:
+        return WorkerResult(
+            status="failed",
+            state={**state, "pages": pages, "content_hash": content_hash},
+            reason="Server misconfiguration: GEMINI_API_KEY is not set. Please contact the site administrator.",
+        )
 
     last_error: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):

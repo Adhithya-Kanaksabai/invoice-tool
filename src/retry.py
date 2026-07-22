@@ -187,7 +187,17 @@ def correction_worker(state: dict) -> WorkerResult:
     if not retry_fields:
         return WorkerResult(status="ok", state=state)
 
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    try:
+        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    except KeyError:
+        return WorkerResult(
+            status="ok",
+            state={
+                **state,
+                "correction_attempted_but_failed": True,
+                "correction_failure_reason": "server misconfiguration: GEMINI_API_KEY is not set",
+            },
+        )
     prompt_text = _failure_reason_text(flags, retry_fields)
 
     contents: list = [prompt_text, *_image_parts(pages)]

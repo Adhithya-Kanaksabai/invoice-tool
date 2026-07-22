@@ -278,6 +278,25 @@ a generic "file appears to be corrupt or unreadable" message otherwise — never
 text or a traceback. Verified by reproducing the exact failure against the live deployed app
 first, not assuming the fix would work.
 
+**A second raw traceback on the same redeploy: an unguarded `os.environ["GEMINI_API_KEY"]`
+lookup crashed with a bare `KeyError`.** After merging the Poppler fix above and redeploying,
+the PDF ingest step worked, but the very next line — constructing the Gemini client — threw an
+uncaught `KeyError` straight into the UI, because `extract.py` and `retry.py` both did
+`os.environ["GEMINI_API_KEY"]` unguarded, outside any try/except (in `extract.py`, one line
+*before* the try/except block that already wraps everything after it). The orchestrator itself
+has no top-level exception handling by design (see "Architecture" above — it only understands
+`WorkerResult.status`), so any worker-level crash always reaches the UI raw unless the worker
+catches it first; this was simply a spot that hadn't been. Fixed by wrapping both client
+constructions in `try/except KeyError`: `extraction_worker` now returns a clean failed
+`WorkerResult` ("server misconfiguration"), and `correction_worker` — whose return status the
+orchestrator doesn't even check, it only reads `.state` — follows the exact same
+`correction_attempted_but_failed` give-up pattern already used for its other two failure paths,
+so a missing key mid-correction degrades to "kept original values" instead of crashing the whole
+pipeline. Reinforces the same lesson as bug #1 and the Poppler bug above it: every external
+dependency a worker touches (the vision API, the filesystem, an env var) needs its own explicit
+failure boundary — "wrap the one call I was thinking about" isn't the same guarantee as "nothing
+in this worker can throw past its own return."
+
 **Docker + docker-compose (Postgres), verified end-to-end, not just written and assumed to work.**
 Added a `Dockerfile` (Python 3.11-slim, `apt-get install poppler-utils` baked in — the actual
 justification for Docker here, since a Poppler-not-on-PATH mid-session install was a real earlier
@@ -400,7 +419,8 @@ app couldn't otherwise produce savable image files), Docker/docker-compose with 
 end-to-end against a real container (migrations, a live extraction, and cross-run duplicate
 detection all confirmed working, not just assumed), a second README pass trimming ~130 lines
 of prose down to ~90 with a Mermaid flowchart replacing the ASCII architecture diagram, Streamlit
-Community Cloud deployment support (`packages.txt` for Poppler, secrets bridging), and a sixth
-adversarial-testing bug found on the live deployment itself — a raw traceback on PDF upload,
-traced to an unmerged fix plus a real gap in the ingest-layer's own error handling, both now
-closed._
+Community Cloud deployment support (`packages.txt` for Poppler, secrets bridging), and two more
+adversarial-testing bugs found on the live deployment itself, back to back — a raw traceback on
+PDF upload (an unmerged fix plus a real gap in the ingest-layer's own error handling), then, on
+the same redeploy, a second raw traceback from an unguarded `GEMINI_API_KEY` lookup — both now
+closed with explicit failure boundaries around every external dependency each worker touches._
