@@ -473,7 +473,8 @@ documents that were already screened to work. So I ran the pipeline against **CO
 (`naver-clova-ix/cord-v2`, CC-BY-4.0), a public, real-world receipt dataset — genuine phone-photo
 Indonesian retail receipts, nobody curated them for legibility, and other extraction projects get
 measured against the same dataset. `tests/fetch_cord_benchmark.py` pulls 20 of them and builds a
-deliberately narrow ground truth (just `total` and item descriptions — CORD's own annotations for
+deliberately narrow ground truth (`total` and item descriptions on every receipt, plus `subtotal` on
+the ~65% CORD annotates one for — see the widening note below; CORD's own annotations for
 merchant/date/tax are inconsistent enough, dict-vs-list menus and "." used as a thousands separator
 in some receipts and a comma in others, that guessing at those fields would have meant scoring my
 own guesses, not CORD's data).
@@ -513,9 +514,32 @@ and `evals/benchmarks/cord_v2_2026-07-22.json`) — an interviewer can open both
 
 This is the whole point of testing against documents you didn't get to choose: a benchmark you can't
 curate is the only kind that tells you something you didn't already believe. The remaining field
-accuracy gap (89.4%, not 100%) is genuine per-field misreads on messy real photos — not another
+accuracy gap (~90%, not 100%) is genuine per-field misreads on messy real photos — not another
 structural bug — which is a much more boring, much more believable number than either 20% or 100%
 would have been on their own.
+
+**Then I widened what CORD scores.** The first pass only scored `total` and item descriptions,
+because CORD's merchant/date/tax annotations are too inconsistent to trust. But `subtotal` IS
+annotated on ~65% of the receipts (14 of the 20 here), and it's worth scoring because it's
+arithmetically meaningful — it has to reconcile with the line items, so getting it right is a real
+signal, not just another string match. The key design point: the ground truth field set is
+**per-document**, not fixed. `score_document` only scores the keys that are actually present in a
+given document's ground truth, so the 6 receipts CORD never annotated a subtotal for simply aren't
+scored on subtotal — they're not penalised against a value I'd have had to invent. Scoring on the
+wider field set, field accuracy went to **90.9%** (up slightly from 89.4%, because the model reads
+subtotal correctly on most receipts — adding a field it's good at raised the average). That's the
+honest way to widen a benchmark: add a field the source actually annotates, only on the documents it
+annotates it for, not by back-filling guesses to pad the field count.
+
+**What this means for the "did you actually test receipts?" question.** The honest scorecard now:
+invoices have 24 hand-verified fully-scored documents; receipts have 5 hand-verified fully-scored
+PLUS 20 external CORD receipts (scored on total + subtotal + items) — 25 receipt documents total,
+*more* than the invoice count, and receipts are the only half of the project with an external public
+benchmark at all. The one real remaining thinness is that *full-field* receipt scoring (date, tax,
+tip, payment_method, per-line-item amounts) is still only on the 5 hand-verified ones — CORD's own
+annotations aren't reliable enough to score those. So the accurate thing to say is "receipt volume
+and real-world coverage are strong; full-field receipt depth is still the thinnest part of the eval"
+— not the vaguer "I mostly tested invoices," which stopped being true once CORD went in.
 
 ## Anticipated interview questions
 
@@ -544,10 +568,14 @@ guessing a field name) that only existed because nothing had tested the generic 
 genuinely different second shape before. That's a stronger claim than "the code is generic" — it's
 "I tried to break the genericity claim and found exactly where it was still lying."
 
-**What would you change with more time?** Test against genuinely messy real-world scans (actual
-photographed/scanned invoices, not constructed documents) — that's the real test of whether the
-validation and retry logic earn their keep beyond the 3 templates and mild synthetic degradation
-built so far.
+**What would you change with more time?** The honest current gap is *full-field* receipt depth. I
+have 25 receipt documents scored now (5 hand-verified on every field, 20 external CORD ones scored on
+total/subtotal/items), but the CORD receipts can't be scored on date/tax/tip/payment-method because
+CORD's own annotations for those are too inconsistent to trust as ground truth — so full-field
+receipt accuracy still rests on just the 5 hand-verified ones. Closing that means hand-verifying more
+real receipts, which is manual-labour-bound, not code-bound. (The thing I'd have said here a few days
+ago — "test against genuinely messy real-world scans" — is now done: that's exactly what the CORD-v2
+benchmark is.)
 
 **What's the actual failure mode this catches that a naive "just call an LLM" version wouldn't?**
 A subtotal that doesn't match its line items, or a total that doesn't match subtotal + adjustments
@@ -651,11 +679,20 @@ correction loop is never triggered by the eval set at all (1.00 API calls per do
 re-running the identical eval moves the headline accuracy by ~0.3% because the model is
 non-deterministic. Test suite grew from 87 to 122.
 
-Most recent addition: an **external benchmark against CORD-v2** (a public, real-world receipt
-dataset, run separately from the hand-verified 29-document set) — which immediately found a real
-bug the in-house set structurally couldn't: `Receipt.transaction_date` was hard-required, and CORD's
-genuine phone-photo receipts include ones too blurry to read a date off, causing 16 of 20 documents
-to fail extraction outright (20% success). Fixed by making the field Optional and confirmed nothing
-downstream depended on it being required; re-ran the identical 20 documents and confirmed the fix —
-100% extraction success, 89.4% field accuracy on the ones that extract. Both the before and after
-runs are committed to the repo. Test suite grew from 122 to 135._
+An **external benchmark against CORD-v2** (a public, real-world receipt dataset, run separately from
+the hand-verified 29-document set) — which immediately found a real bug the in-house set
+structurally couldn't: `Receipt.transaction_date` was hard-required, and CORD's genuine phone-photo
+receipts include ones too blurry to read a date off, causing 16 of 20 documents to fail extraction
+outright (20% success). Fixed by making the field Optional and confirmed nothing downstream depended
+on it being required; re-ran the identical 20 documents and confirmed the fix — 100% extraction
+success. Both the before and after runs are committed to the repo.
+
+Most recent: **widened the receipt eval's depth and coverage.** Added receipt-schema unit tests
+(the schema-agnostic validator's genericity was only ever asserted by the slow eval, never
+unit-tested against the second schema), and widened the CORD ground truth to score `subtotal` (an
+arithmetically-meaningful field) on the ~65% of receipts CORD annotates one for, per-document so the
+rest aren't penalised against a guessed value — field accuracy 89.4% → 90.9%. Net effect on the
+"did you actually test receipts?" question: receipts now have 5 hand-verified fully-scored + 20
+external CORD documents (25 total, more than the 24 invoices, and the only half with a public
+benchmark); the honest remaining thinness is full-field receipt scoring, still only on the 5
+hand-verified ones. Test suite grew from 122 to 143._

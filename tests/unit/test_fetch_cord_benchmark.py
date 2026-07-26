@@ -77,3 +77,25 @@ def test_build_ground_truth_skips_menu_items_with_no_name():
     }
     gt = _build_ground_truth(gt_parse)
     assert gt["items"] == [{"description": "Real Item"}]
+
+
+def test_build_ground_truth_includes_subtotal_when_cord_annotates_it():
+    gt_parse = {
+        "total": {"total_price": "28,000"},
+        "sub_total": {"subtotal_price": "28,000"},
+        "menu": {"nm": "JASMINE MT", "price": "24,000"},
+    }
+    gt = _build_ground_truth(gt_parse)
+    assert gt["subtotal"] == 28000.0
+
+
+def test_build_ground_truth_omits_subtotal_when_cord_has_none():
+    # ~35% of CORD receipts have no subtotal annotation at all -- those must
+    # NOT get a subtotal key, so score_document never scores them on a field
+    # their own ground truth never had (rather than defaulting it to total).
+    gt_parse = {
+        "total": {"total_price": "91000"},
+        "menu": [{"nm": "J.STB PROMO", "price": "17500"}],
+    }
+    gt = _build_ground_truth(gt_parse)
+    assert "subtotal" not in gt

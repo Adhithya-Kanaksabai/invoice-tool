@@ -17,11 +17,14 @@ record here. Its schema is messy by design (menu items are sometimes a dict,
 sometimes a list; prices mix "." and "," as thousands separators with no
 consistent convention; merchant name/date/tax are frequently just absent from
 the annotation). Rather than paper over that with guessed defaults, this
-script extracts only the two things CORD reliably provides across the set:
-the receipt's total, and the list of line-item descriptions. Those become the
-only keys in the ground truth JSON — eval.py's score_document already only
-scores whatever keys are present in ground truth, so this is a legitimate,
-if narrower, benchmark rather than a padded one.
+script extracts the fields CORD provides reliably enough to score against:
+the receipt's total and its line-item descriptions (on essentially every
+receipt), plus the subtotal on the ~65% of receipts CORD actually annotates
+one for. The ground truth key set is therefore PER-DOCUMENT — eval.py's
+score_document only scores whatever keys are present in a given document's
+ground truth, so a receipt CORD never annotated a subtotal for simply isn't
+scored on subtotal rather than being penalised against a guessed one. This is
+a legitimate, if narrower, benchmark rather than a padded one.
 
 Usage: venv/Scripts/python.exe tests/fetch_cord_benchmark.py [--count 20]
 Downloads ~225MB once (cached under tests/cord_benchmark/.cache/), then only
@@ -88,6 +91,17 @@ def _build_ground_truth(gt_parse: dict) -> dict | None:
     Returns a ground truth dict with only the fields this script can extract
     reliably, or None if even the total isn't parseable (the one field
     reliable enough across the set to make a document worth scoring at all).
+
+    Field set is per-document, not fixed: `total` and item descriptions are on
+    essentially every CORD receipt, but `subtotal` is only annotated on ~65% of
+    them. It's included ONLY where CORD actually has it, rather than defaulting
+    a missing subtotal to (say) the total — score_document only scores keys
+    present in a document's own ground truth, so a receipt CORD never annotated
+    a subtotal for simply isn't scored on subtotal, instead of being penalised
+    against a value that was never in the source data. subtotal is worth adding
+    where present because it's arithmetically meaningful (it must reconcile with
+    the line items), unlike merchant/date which CORD annotates too
+    inconsistently to trust as ground truth at all.
     """
     total = _parse_cord_amount(gt_parse.get("total", {}).get("total_price"))
     if total is None:
@@ -99,7 +113,13 @@ def _build_ground_truth(gt_parse: dict) -> dict | None:
         if name:
             items.append({"description": str(name).strip()})
 
-    return {"total": total, "items": items}
+    ground_truth: dict = {"total": total, "items": items}
+
+    subtotal = _parse_cord_amount(gt_parse.get("sub_total", {}).get("subtotal_price"))
+    if subtotal is not None:
+        ground_truth["subtotal"] = subtotal
+
+    return ground_truth
 
 
 def _resolve_test_parquet_url() -> str:
@@ -159,16 +179,24 @@ def main(count: int) -> None:
         (GROUND_TRUTH_DIR / f"{name}.json").write_text(json.dumps(ground_truth, indent=2))
         written += 1
 
+    with_subtotal = sum(
+        1
+        for p in sorted(GROUND_TRUTH_DIR.glob("cord_*.json"))
+        if "subtotal" in json.loads(p.read_text())
+    )
     (OUT_DIR / "SOURCE.md").write_text(
         f"# CORD-v2 benchmark subset\n\n"
         f"{written} receipts from the CORD-v2 test split, source: {CORD_SOURCE} "
         f"(license: {CORD_LICENSE}).\n\n"
-        "Ground truth here is a NARROW, honest subset of CORD's own annotations "
-        "(total + line-item descriptions only) -- see fetch_cord_benchmark.py's "
-        "docstring for why merchant/date/tax/subtotal aren't included. This is an "
-        "external, public benchmark, run separately from and in addition to the "
-        "hand-verified 29-document set under tests/sample_invoices and "
-        "tests/sample_receipts, not a replacement for it.\n"
+        "Ground truth here is a NARROW, honest subset of CORD's own annotations. "
+        f"Every document is scored on `total` and line-item descriptions; the "
+        f"{with_subtotal} of {written} that CORD also annotates a subtotal for are "
+        "additionally scored on `subtotal`. merchant/date/tax are excluded because "
+        "CORD annotates them too inconsistently to trust as ground truth -- see "
+        "fetch_cord_benchmark.py's docstring. This is an external, public benchmark, "
+        "run separately from and in addition to the hand-verified 29-document set "
+        "under tests/sample_invoices and tests/sample_receipts, not a replacement "
+        "for it.\n"
     )
     print(f"Wrote {written} CORD-v2 samples to {OUT_DIR}")
 
