@@ -4,9 +4,10 @@ subset (see tests/fetch_cord_benchmark.py) and reports field accuracy against
 it, separately from eval.py's hand-verified 29-document run.
 
 Why a separate module rather than folding this into eval.py's DATASETS list:
-CORD's ground truth only covers `total` and item descriptions (see
-fetch_cord_benchmark.py's docstring for why merchant/date/tax/subtotal aren't
-included) -- mixing a narrower-scored, externally-sourced dataset into the
+CORD's ground truth is narrower and per-document (total + item descriptions on
+every receipt, subtotal on the ~65% CORD annotates one for; see
+fetch_cord_benchmark.py's docstring for why merchant/date/tax are still
+excluded) -- mixing a narrower-scored, externally-sourced dataset into the
 same DATASETS loop as the hand-verified set would make one blended number out
 of two differently-shaped measurements. Reuses eval.py's own scoring
 functions (score_document, _values_match) rather than reimplementing them, so
@@ -112,9 +113,11 @@ def run_cord_eval() -> dict:
         ),
         "field_accuracy": round(field_correct / field_total, 3) if field_total else None,
         "note": (
-            "Ground truth here only covers `total` and item descriptions -- narrower "
-            "than the hand-verified 29-document set's full field coverage. See "
-            "tests/fetch_cord_benchmark.py for why."
+            "Ground truth covers `total` and item descriptions on every document, "
+            "plus `subtotal` on the ~65% of CORD receipts that annotate one -- "
+            "narrower than the hand-verified 29-document set's full field coverage, "
+            "but wider than total alone. merchant/date/tax are excluded because CORD "
+            "annotates them too inconsistently to trust. See tests/fetch_cord_benchmark.py."
         ),
         "per_document": per_document,
     }
@@ -136,6 +139,8 @@ if __name__ == "__main__":
     print(f"CORD-v2 benchmark: {results['total_documents']} documents")
     print(f"Extraction success rate: {results['extraction_success_rate']:.1%}")
     if results["field_accuracy"] is not None:
-        print(f"Field-level accuracy (total + item descriptions): {results['field_accuracy']:.1%}")
+        print(
+            f"Field-level accuracy (total + subtotal + item descriptions): {results['field_accuracy']:.1%}"
+        )
     path = write_cord_report(results)
     print(f"\nReport written to {path}")

@@ -1,0 +1,110 @@
+{
+  "benchmark": "CORD-v2 (naver-clova-ix/cord-v2, external, CC-BY-4.0)",
+  "generated_at": "2026-07-26T08:27:37Z",
+  "total_documents": 20,
+  "extraction_success_rate": 1.0,
+  "field_accuracy": 0.909,
+  "note": "Ground truth covers total and item descriptions on every document, plus subtotal on the ~65% of CORD receipts that annotate one -- narrower than the hand-verified 29-document set full field coverage, but wider than total alone. merchant/date/tax are excluded because CORD annotates them too inconsistently to trust. See tests/fetch_cord_benchmark.py.",
+  "per_document": [
+    {
+      "file": "cord_000.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.75
+    },
+    {
+      "file": "cord_001.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_002.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.75
+    },
+    {
+      "file": "cord_003.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_004.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_005.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.5
+    },
+    {
+      "file": "cord_006.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.8
+    },
+    {
+      "file": "cord_007.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.75
+    },
+    {
+      "file": "cord_008.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.75
+    },
+    {
+      "file": "cord_009.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_010.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_011.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_012.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_013.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_014.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_015.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 0.6
+    },
+    {
+      "file": "cord_016.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_017.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_018.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    },
+    {
+      "file": "cord_019.jpg",
+      "extraction_failed": false,
+      "field_accuracy": 1.0
+    }
+  ]
+}
