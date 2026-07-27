@@ -282,3 +282,100 @@ def test_persist_receipt_with_no_transaction_date_stores_null_document_date(db_s
     assert cached is not None
     assert cached["transaction_date"] is None
     assert cached["merchant_name"] == "Corner Cafe"
+
+
+# --- human-in-the-loop review loop ------------------------------------------
+
+
+def _persist_and_get_id(db_session, **overrides) -> int:
+    """Persist one invoice and return its Document id (the new return value of
+    persist_pipeline_result, which the review loop relies on to link a review
+    to exactly the document it reviewed)."""
+    doc_id = persist_pipeline_result(
+        make_result(make_invoice(**overrides)),
+        original_filename="inv.pdf",
+        content_hash="hash-review",
+        started_at=datetime.utcnow(),
+    )
+    assert doc_id is not None
+    return doc_id
+
+
+def test_persist_pipeline_result_returns_document_id(db_session):
+    doc_id = _persist_and_get_id(db_session)
+    assert isinstance(doc_id, int)
+
+
+def test_persist_pipeline_result_returns_none_for_failed_run(db_session):
+    # A failed extraction has no document to review, so no id to return.
+    from persistence import persist_pipeline_result as persist
+
+    result = PipelineResult(
+        final_state={"schema_id": "invoice-v1", "extraction_failed": True},
+        status="failed",
+        history=["extraction_worker"],
+        reason="failed after 3 attempts",
+    )
+    doc_id = persist(
+        result,
+        original_filename="broken.pdf",
+        content_hash="hash-broken-review",
+        started_at=datetime.utcnow(),
+    )
+    assert doc_id is None
+
+
+def test_new_document_starts_pending_and_unreviewed(db_session):
+    from persistence import get_document_review
+
+    doc_id = _persist_and_get_id(db_session)
+    review = get_document_review(doc_id)
+    assert review["review_status"] == "pending"
+    assert review["corrected_data"] is None
+    assert review["reviewed_at"] is None
+
+
+def test_save_review_with_corrections_stores_them_alongside_original(db_session):
+    from persistence import get_document_review, save_document_review
+
+    doc_id = _persist_and_get_id(db_session, total=100.0)
+    corrected = make_invoice(total=100.0).model_dump(mode="json")
+    corrected["total"] = 142.0  # a human fixing a misread total
+
+    save_document_review(doc_id, corrected)
+
+    review = get_document_review(doc_id)
+    assert review["review_status"] == "approved"
+    assert review["corrected_data"]["total"] == 142.0
+    assert review["reviewed_at"] is not None
+    # The model's ORIGINAL output must be untouched — the whole point of
+    # storing corrections alongside rather than over the original.
+    original = find_cached_document("hash-review")
+    assert original["total"] == 100.0
+
+
+def test_save_review_approved_as_is_stores_no_corrected_data(db_session):
+    from persistence import get_document_review, save_document_review
+
+    doc_id = _persist_and_get_id(db_session)
+    save_document_review(doc_id, None)  # approved with no edits
+
+    review = get_document_review(doc_id)
+    assert review["review_status"] == "approved"
+    assert review["corrected_data"] is None
+    assert review["reviewed_at"] is not None
+
+
+def test_save_review_raises_for_unknown_document(db_session):
+    import pytest
+
+    from persistence import save_document_review
+
+    with pytest.raises(LookupError):
+        save_document_review(999999, {"total": 1.0})
+
+
+def test_get_document_review_returns_none_for_unknown_document(db_session):
+    from persistence import get_document_review
+
+    assert get_document_review(999999) is None

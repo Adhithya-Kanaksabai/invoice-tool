@@ -28,6 +28,7 @@ from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
+from pydantic import ValidationError
 
 # Streamlit Community Cloud exposes secrets via st.secrets, not as OS env
 # vars — bridge them into os.environ before any local module import, since
@@ -46,10 +47,15 @@ from export import export_csv, export_json
 from extract import extraction_worker
 from ingest import compute_content_hash
 from orchestrator import run_pipeline
-from persistence import check_natural_id_exists, persist_pipeline_result
+from persistence import (
+    check_natural_id_exists,
+    get_document_review,
+    persist_pipeline_result,
+    save_document_review,
+)
 from report import report_worker
 from retry import correction_worker
-from schema_registry import get_list_field_name, get_schema
+from schema_registry import get_list_field_name, get_scalar_field_names, get_schema
 from validate import validation_worker
 
 # Local dev and Docker create the schema via `alembic upgrade head` (see
@@ -202,7 +208,9 @@ def _render_agentic_panel(final_state: dict) -> None:
 
     if not retried_fields:
         if final_state.get("correction_attempted_but_failed"):
-            st.badge("Attempted — could not resolve, original values kept", icon="⚠️", color="orange")
+            st.badge(
+                "Attempted — could not resolve, original values kept", icon="⚠️", color="orange"
+            )
             reason = final_state.get("correction_failure_reason")
             if reason:
                 st.caption(reason)
@@ -256,43 +264,186 @@ def _render_report_group(title: str, entries: list[dict], color: str) -> None:
                 )
 
 
-if file_path:
-    started_at = datetime.utcnow()
-    with st.status("Running pipeline...", expanded=False) as status:
-        result = run_pipeline(
-            {
-                "file_path": file_path,
-                "schema_id": schema_id,
-                "duplicate_checker": check_natural_id_exists,
-                "skip_cache": force_rerun,
-            },
-            workers=[
-                extraction_worker,
-                validation_worker,
-                confidence_worker,
-                report_worker,
-            ],
-            correction_worker=correction_worker,
+def _flagged_field_names(report: dict) -> set[str]:
+    """Fields that carry an error or warning — the ones a reviewer should look
+    at first. Derived from the already-built report, not recomputed."""
+    return {entry["field"] for entry in report["errors"] + report["warnings"]}
+
+
+def _render_review_section(schema_id: str, document, report: dict, document_id: int | None) -> None:
+    """
+    The human-in-the-loop step: let a reviewer correct any field the model got
+    wrong and approve — the tool's actual promise ("confirm the flagged fields
+    instead of retyping"), which until now the UI only displayed but couldn't
+    act on.
+
+    The model's own output (document) is never mutated here — edits are
+    validated back through the SAME schema the extractor uses, then saved as
+    corrected_data ALONGSIDE the original (see persistence.save_document_review
+    and models.py). Approving with no edits stores nothing but the approval.
+    """
+    st.subheader("Review & approve")
+
+    if document_id is None:
+        st.warning(
+            "This result couldn't be saved to the database, so there's nothing to attach a "
+            "review to. See the error above."
         )
-        status.update(
-            label="Pipeline finished" if result.status == "ok" else "Pipeline failed",
-            state="complete" if result.status == "ok" else "error",
+        return
+
+    doc_schema = get_schema(schema_id)
+    scalar_fields = get_scalar_field_names(doc_schema)
+    list_field = get_list_field_name(doc_schema)
+    flagged = _flagged_field_names(report)
+
+    review = st.session_state.get(f"review_{document_id}")
+    if review and review.get("review_status") == "approved":
+        edited_suffix = "with edits" if review.get("corrected_data") else "as-is"
+        when = review.get("reviewed_at")
+        when_str = f" on {when:%Y-%m-%d %H:%M} UTC" if when else ""
+        st.success(f"Approved ({edited_suffix}){when_str}. You can edit and re-approve below.")
+
+    # Prefill from a prior human correction if one exists, else the model's
+    # own output — always start the editor from the best-known-truth so far.
+    base = (review or {}).get("corrected_data") or document.model_dump(mode="json")
+
+    st.caption(
+        "Edit any value the model got wrong, then approve. The model's original output is always "
+        "kept — your corrections are stored alongside it, never over it."
+    )
+
+    with st.form(key=f"review_form_{document_id}"):
+        edited_scalars: dict[str, str] = {}
+        cols = st.columns(2)
+        for i, name in enumerate(scalar_fields):
+            current = base.get(name)
+            label = name.replace("_", " ").title()
+            if name in flagged:
+                label = f"⚠️ {label}"
+            edited_scalars[name] = cols[i % 2].text_input(
+                label,
+                value="" if current is None else str(current),
+                key=f"edit_{document_id}_{name}",
+            )
+
+        st.markdown(f"**{list_field.replace('_', ' ').title()}**")
+        edited_items = st.data_editor(
+            base.get(list_field, []),
+            key=f"edit_items_{document_id}",
+            num_rows="fixed",
+            width="stretch",
         )
 
-    # Persistence is the system of record, not an optional signal — a save
-    # failure is surfaced loudly, not swallowed (see persistence.py). It
-    # doesn't block showing the result below: the extraction itself is real
-    # and already succeeded even if the DB write just failed.
-    content_hash = result.final_state.get("content_hash") or compute_content_hash(file_path)
+        submitted = st.form_submit_button("✅ Approve", type="primary")
+
+    if not submitted:
+        return
+
+    # Build the candidate document from the model's full output, override the
+    # editable fields, and re-validate through the schema — a human's
+    # corrections have to form a valid document too, same bar as extraction.
+    candidate = document.model_dump(mode="json")
+    for name in scalar_fields:
+        raw = edited_scalars[name].strip()
+        candidate[name] = raw or None
+    candidate[list_field] = list(edited_items)
+
     try:
-        persist_pipeline_result(
-            result,
-            original_filename=original_filename or Path(file_path).name,
-            content_hash=content_hash,
-            started_at=started_at,
+        validated = doc_schema.model.model_validate(candidate)
+    except ValidationError as e:
+        bad = sorted({".".join(str(p) for p in err["loc"]) for err in e.errors()})
+        st.error(
+            "Can't approve — these fields aren't valid after your edits: "
+            f"{', '.join(bad)}. Fix them and approve again."
         )
+        return
+
+    # corrected_data is stored only if the human's final answer actually
+    # differs from what the model produced — otherwise it's an approval of the
+    # model's output as-is, and there's nothing to store but the approval.
+    validated_dump = validated.model_dump(mode="json")
+    original_dump = document.model_dump(mode="json")
+    corrected = None if validated_dump == original_dump else validated_dump
+
+    try:
+        save_document_review(document_id, corrected)
     except Exception as e:
-        st.error(f"Extraction succeeded but saving this result to the database failed: {e}")
+        st.error(f"Couldn't save the review: {e}")
+        return
+
+    st.session_state[f"review_{document_id}"] = get_document_review(document_id)
+    if corrected is None:
+        st.success("Approved — the model's output was confirmed correct, no changes stored.")
+    else:
+        st.success("Approved — your corrections were saved alongside the model's original output.")
+
+
+if file_path:
+    # Streamlit re-runs this whole script on every widget interaction. Without
+    # this guard, editing a field or clicking Approve would silently re-run the
+    # entire (live, paid) pipeline and write a duplicate run row every time.
+    # Key the cached result by the file's content + schema + force-rerun flag,
+    # so the pipeline runs exactly once per distinct input, and review-widget
+    # interactions reuse the stored result. (Also fixes a latent re-run-on-
+    # every-interaction bug that predates the review loop.)
+    content_hash = compute_content_hash(file_path)
+    run_key = f"{content_hash}|{schema_id}|{force_rerun}"
+
+    if st.session_state.get("run_key") != run_key:
+        started_at = datetime.utcnow()
+        with st.status("Running pipeline...", expanded=False) as status:
+            result = run_pipeline(
+                {
+                    "file_path": file_path,
+                    "schema_id": schema_id,
+                    "duplicate_checker": check_natural_id_exists,
+                    "skip_cache": force_rerun,
+                },
+                workers=[
+                    extraction_worker,
+                    validation_worker,
+                    confidence_worker,
+                    report_worker,
+                ],
+                correction_worker=correction_worker,
+            )
+            status.update(
+                label="Pipeline finished" if result.status == "ok" else "Pipeline failed",
+                state="complete" if result.status == "ok" else "error",
+            )
+
+        # Persistence is the system of record, not an optional signal — a save
+        # failure is surfaced loudly, not swallowed (see persistence.py). It
+        # doesn't block showing the result below: the extraction itself is real
+        # and already succeeded even if the DB write just failed.
+        document_id: int | None = None
+        persist_error: str | None = None
+        try:
+            document_id = persist_pipeline_result(
+                result,
+                original_filename=original_filename or Path(file_path).name,
+                content_hash=content_hash,
+                started_at=started_at,
+            )
+        except Exception as e:
+            persist_error = str(e)
+
+        st.session_state["run_key"] = run_key
+        st.session_state["result"] = result
+        st.session_state["document_id"] = document_id
+        st.session_state["persist_error"] = persist_error
+        st.session_state[f"review_{document_id}"] = (
+            get_document_review(document_id) if document_id else None
+        )
+
+    result = st.session_state["result"]
+    document_id = st.session_state["document_id"]
+    persist_error = st.session_state["persist_error"]
+
+    if persist_error:
+        st.error(
+            f"Extraction succeeded but saving this result to the database failed: {persist_error}"
+        )
 
     if result.status == "failed":
         st.error(result.reason or "Extraction failed.")
@@ -339,12 +490,13 @@ if file_path:
         _render_agentic_panel(result.final_state)
 
         st.divider()
-        doc_schema = get_schema(schema_id)
-        list_field = get_list_field_name(doc_schema)
-        st.subheader(list_field.replace("_", " ").title())
-        st.dataframe([item.model_dump() for item in getattr(document, list_field)], width="stretch")
+        _render_review_section(schema_id, document, report, document_id)
 
+        st.divider()
         st.subheader("Export")
+        st.caption(
+            "Exports the model's original extraction. Human corrections are saved to the database."
+        )
         with tempfile.TemporaryDirectory() as export_dir:
             json_path = Path(export_dir) / "result.json"
             csv_path = Path(export_dir) / "result.csv"
