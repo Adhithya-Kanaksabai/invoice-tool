@@ -94,8 +94,11 @@ class Document(Base):
     # document was approved with no edits (approved-as-is) or not yet reviewed;
     # review_status disambiguates those two.
     review_status: Mapped[str] = mapped_column(
-        String, default="pending", index=True
-    )  # "pending" | "approved"
+        String, default="pending", server_default="pending", index=True
+    )  # "pending" | "approved". server_default (not just the Python-side
+    # default) so the column can be ADDed to a table that already has rows —
+    # see db.py::init_db's additive-column reconciler, which needs a DDL-level
+    # default to backfill existing rows on Streamlit Cloud.
     corrected_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
