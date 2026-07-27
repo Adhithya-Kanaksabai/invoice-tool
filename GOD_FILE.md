@@ -112,6 +112,50 @@ so a future version can diff two runs mechanically.
   plus a short text note from the model on where it read each value (e.g. "summary section,
   Subtotal row"). That's a deliberate, named simplification, not a silent shortcut.
 
+## The human-in-the-loop review loop — closing the gap between the pitch and the tool
+
+The tool's whole pitch is "don't retype the invoice, just **confirm** the flagged fields." For a
+long time the UI only did the first half of that — it *showed* you the flags, the confidence
+scores, the field-level status — but you couldn't actually *act* on any of it. There was no button
+to fix a wrong value, no "approve," nothing that closed the loop. The tool stopped one inch short of
+its own promise. This is the step that closes it: a reviewer can edit any field the model got wrong
+and approve, and the approval + corrections persist.
+
+Three design decisions worth being able to defend:
+
+- **The model's output is immutable; corrections live alongside it, never over it.** The
+  `documents` table already stored the model's extraction in a `data` column. A human correction
+  does NOT overwrite that — it goes in a new `corrected_data` column, next to it. So every reviewed
+  document is a `(data, corrected_data)` pair: "here's what the model said, here's what a human
+  confirmed was actually true." That's not just tidiness — it's a free, growing, real-world
+  eval/regression dataset for later, produced as a side effect of people just doing their review
+  job. Overwriting `data` would have thrown that signal away permanently.
+
+- **A human's corrections go through the exact same schema validation the extractor does.** When
+  you approve, the edited fields are re-validated through the same Pydantic model the vision model's
+  output had to satisfy — a human can't save an internally-invalid document (a non-numeric total, a
+  malformed date) any more than the model could. Same bar, one code path, not a second looser one
+  for humans.
+
+- **"Approved as-is" and "approved with edits" are different facts, and stored as such.**
+  `corrected_data` is NULL when a reviewer approved the model's output unchanged — there's nothing
+  to store but the approval itself — and holds the corrected document only when they actually
+  changed something. `review_status` ("pending" | "approved") disambiguates "not yet looked at"
+  from "looked at, nothing to fix." Collapsing those would lose the distinction between "the model
+  was trusted" and "the model was corrected," which is exactly the signal you'd want to measure.
+
+A subtler bug this fixed along the way: Streamlit re-runs the whole script top-to-bottom on every
+widget interaction. Before this, editing a field or clicking a button would have silently re-run the
+entire live, paid extraction pipeline and written a duplicate run row every single time. The review
+work forced a `session_state` guard keyed by file-content-hash so the pipeline runs exactly once per
+distinct input and every subsequent interaction reuses the stored result — which also quietly closed
+a latent re-run-on-every-click bug that predated the review loop.
+
+Verified end-to-end with Streamlit's own `AppTest` harness (headless, runs the real app script):
+picking a cached sample renders the review form; editing the total and approving stores the
+correction and leaves the model's original untouched; a deliberately invalid edit is blocked with a
+clear message and nothing is saved.
+
 ## The second document type — proving reusability instead of asserting it
 
 The single biggest architectural addition after the first version: registering `receipt-v1`
@@ -554,6 +598,15 @@ happened.
 should never decide whether math checks out). The Correction Worker is the one place "how should
 I re-examine this" doesn't have one correct fixed answer.
 
+**When a human corrects a field in the review UI, why not just update the record?** Because
+overwriting the model's output would throw away the single most valuable signal the tool produces:
+the pair "what the model extracted" vs. "what a human confirmed was actually true." I keep the
+model's output immutable and store the correction in a separate column alongside it — so every
+reviewed document becomes a labelled example of where the model was right or wrong, for free, as a
+byproduct of people just doing their review work. That's a real-world eval set that grows itself.
+The human's edits still have to pass the same schema validation the model's output did, so a person
+can't save an internally-invalid document either.
+
 **How do you know the agentic loop is actually bounded, not just "trust the model to stop"?**
 Two separate caps: the orchestrator only invokes the Correction Worker once per pipeline run
 (`max_correction_rounds=1`), and inside that one invocation, the tool-calling loop itself is
@@ -687,7 +740,7 @@ outright (20% success). Fixed by making the field Optional and confirmed nothing
 on it being required; re-ran the identical 20 documents and confirmed the fix — 100% extraction
 success. Both the before and after runs are committed to the repo.
 
-Most recent: **widened the receipt eval's depth and coverage.** Added receipt-schema unit tests
+**Widened the receipt eval's depth and coverage.** Added receipt-schema unit tests
 (the schema-agnostic validator's genericity was only ever asserted by the slow eval, never
 unit-tested against the second schema), and widened the CORD ground truth to score `subtotal` (an
 arithmetically-meaningful field) on the ~65% of receipts CORD annotates one for, per-document so the
@@ -695,4 +748,14 @@ rest aren't penalised against a guessed value — field accuracy 89.4% → 90.9%
 "did you actually test receipts?" question: receipts now have 5 hand-verified fully-scored + 20
 external CORD documents (25 total, more than the 24 invoices, and the only half with a public
 benchmark); the honest remaining thinness is full-field receipt scoring, still only on the 5
-hand-verified ones. Test suite grew from 122 to 143._
+hand-verified ones.
+
+Most recent: **the human-in-the-loop review loop** — the first step of turning this from a
+one-document demo into something that works like a product. A reviewer can now edit any field the
+model got wrong and approve; the model's original output stays immutable in the DB while the
+correction is stored alongside it in a new `corrected_data` column (a `(model said, human confirmed)`
+pair that's free eval data later), edited values are re-validated through the same schema the
+extractor uses, and "approved as-is" vs "approved with edits" are stored as distinct facts. Needed a
+DB migration (Alembic, verified through both revisions) and a Streamlit `session_state` guard that
+also fixed a latent re-run-the-whole-pipeline-on-every-click bug. Verified end-to-end with
+Streamlit's `AppTest`. Test suite grew from 122 to 150._

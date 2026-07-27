@@ -111,11 +111,17 @@ def persist_pipeline_result(
     original_filename: str,
     content_hash: str,
     started_at: datetime,
-) -> None:
+) -> int | None:
     """
     Writes one pipeline run (and, if extraction produced a document, its
     document + flags + confidence scores) to the DB. Raises on failure — see
     module docstring for why this doesn't swallow errors.
+
+    Returns the persisted Document's id, or None if this run produced no
+    document (a failed extraction). The id is what lets the caller (app.py)
+    later attach a human review to exactly this document via
+    save_document_review — added return value, backward-compatible since
+    existing callers (eval.py, tests) simply ignore it.
     """
     schema_id = result.final_state.get("schema_id", "unknown")
     finished_at = datetime.utcnow()
@@ -136,7 +142,7 @@ def persist_pipeline_result(
         session.flush()  # assigns run.id within the open transaction, before final commit
 
         if result.status != "ok" or "document" not in result.final_state:
-            return
+            return None
 
         doc_schema = get_schema(schema_id)
         document = result.final_state["document"]
@@ -172,3 +178,54 @@ def persist_pipeline_result(
             session.add(
                 DocumentConfidence(document_id=document_row.id, field=field_name, score=score)
             )
+
+        return document_row.id
+
+
+def save_document_review(
+    document_id: int, corrected_data: dict | None, reviewed_at: datetime | None = None
+) -> None:
+    """
+    Record a human's review of one document: mark it approved, and store the
+    corrected field values IF the human changed anything.
+
+    `corrected_data` is the full, schema-valid document dict a human confirmed
+    is correct — pass None when they approved the model's output unchanged
+    (approved-as-is). It is stored ALONGSIDE the original `data`, never over
+    it (see models.py) — the model's output stays the permanent record so
+    (data, corrected_data) remains a real "model said X, human confirmed Y"
+    pair.
+
+    Write-side, so it's LOUD on failure like persist_pipeline_result — this is
+    the system of record, and silently losing a human's correction is exactly
+    the kind of data loss the persistence layer refuses to do quietly. Raises
+    LookupError if the document id doesn't exist rather than silently no-op'ing.
+    """
+    with get_session() as session:
+        document = session.get(Document, document_id)
+        if document is None:
+            raise LookupError(f"no document with id {document_id} to review")
+        document.review_status = "approved"
+        document.corrected_data = corrected_data
+        document.reviewed_at = reviewed_at or datetime.utcnow()
+
+
+def get_document_review(document_id: int) -> dict | None:
+    """
+    Read back one document's review state: {review_status, corrected_data,
+    reviewed_at}, or None if the document doesn't exist or the DB is
+    unreachable. Read-side, so it degrades to None rather than raising — the
+    UI treats "can't tell" the same as "not yet reviewed", never blocks on it.
+    """
+    try:
+        with get_session() as session:
+            document = session.get(Document, document_id)
+            if document is None:
+                return None
+            return {
+                "review_status": document.review_status,
+                "corrected_data": document.corrected_data,
+                "reviewed_at": document.reviewed_at,
+            }
+    except Exception:
+        return None

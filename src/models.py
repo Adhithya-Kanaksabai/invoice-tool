@@ -45,7 +45,9 @@ class PipelineRun(Base):
     content_hash: Mapped[str] = mapped_column(String, index=True)
     status: Mapped[str] = mapped_column(String)  # "ok" | "failed", mirrors PipelineResult.status
     reason: Mapped[str | None] = mapped_column(String, nullable=True)
-    worker_history: Mapped[list] = mapped_column(JSON, default=list)  # PipelineResult.history, verbatim
+    worker_history: Mapped[list] = mapped_column(
+        JSON, default=list
+    )  # PipelineResult.history, verbatim
     # See src/persistence.py's _build_correction_history docstring for the
     # exact shape and what it deliberately does NOT capture (a full
     # turn-by-turn transcript would need retry.py instrumentation this round
@@ -78,6 +80,24 @@ class Document(Base):
     party_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     total: Mapped[float | None] = mapped_column(Float, nullable=True)
     document_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+
+    # Human-in-the-loop review state. The tool's whole pitch is "confirm the
+    # flagged fields instead of retyping" — these three columns are what let a
+    # human actually act on that, and persist the acting.
+    #
+    # `data` above stays IMMUTABLE — it's the model's own output, kept as the
+    # permanent record of what the LLM said. A human correction never
+    # overwrites it; it lands in `corrected_data` alongside, so
+    # (data, corrected_data) is a queryable "what the model said vs. what a
+    # human confirmed was true" pair — which is exactly free eval/regression
+    # data for later, not just a UI convenience. corrected_data is NULL when a
+    # document was approved with no edits (approved-as-is) or not yet reviewed;
+    # review_status disambiguates those two.
+    review_status: Mapped[str] = mapped_column(
+        String, default="pending", index=True
+    )  # "pending" | "approved"
+    corrected_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime)
 
