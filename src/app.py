@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import streamlit as st
@@ -125,6 +125,17 @@ STAGE_LABELS = {
 }
 
 SAMPLE_DIR = Path(__file__).parent.parent / "tests" / "sample_invoices"
+
+# reviewed_at is stored naive-UTC in the DB (datetime.utcnow()); display it in
+# IST, the timezone the reviewer actually works in. IST is a fixed UTC+5:30
+# with no daylight saving, so a plain offset is exact — no tz database needed.
+IST_OFFSET = timedelta(hours=5, minutes=30)
+
+
+def _format_ist(when: datetime | None) -> str:
+    if when is None:
+        return ""
+    return f" on {(when + IST_OFFSET):%Y-%m-%d %H:%M} IST"
 
 
 st.title("🧾 Invoice Intelligence Tool")
@@ -264,6 +275,25 @@ def _render_report_group(title: str, entries: list[dict], color: str) -> None:
                 )
 
 
+def _render_validation_report(report: dict) -> None:
+    """The three-signal report (errors / warnings / pass), rendered inside the
+    right-hand 'Validation report' tab next to the source image."""
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Errors", len(report["errors"]))
+    m2.metric("Warnings", len(report["warnings"]))
+    m3.metric("Passed", len(report["pass"]))
+    st.caption("Only errors trigger automatic correction — warnings are informational.")
+
+    _render_report_group("Errors", report["errors"], "red")
+    _render_report_group("Warnings", report["warnings"], "orange")
+    with st.expander(f"Pass ({len(report['pass'])})", expanded=False):
+        for entry in report["pass"]:
+            line = f"**{entry['field']}**: {entry['value']}"
+            if entry["source_note"]:
+                line += f"  \n_source: {entry['source_note']}_"
+            st.markdown(line)
+
+
 def _flagged_field_names(report: dict) -> set[str]:
     """Fields that carry an error or warning — the ones a reviewer should look
     at first. Derived from the already-built report, not recomputed."""
@@ -281,9 +311,11 @@ def _render_review_section(schema_id: str, document, report: dict, document_id: 
     validated back through the SAME schema the extractor uses, then saved as
     corrected_data ALONGSIDE the original (see persistence.save_document_review
     and models.py). Approving with no edits stores nothing but the approval.
-    """
-    st.subheader("Review & approve")
 
+    Rendered inside the right-hand "Review & approve" tab (see the main layout),
+    next to the source image so a reviewer can read the document while
+    correcting fields — hence no subheader of its own here, the tab names it.
+    """
     if document_id is None:
         st.warning(
             "This result couldn't be saved to the database, so there's nothing to attach a "
@@ -299,8 +331,7 @@ def _render_review_section(schema_id: str, document, report: dict, document_id: 
     review = st.session_state.get(f"review_{document_id}")
     if review and review.get("review_status") == "approved":
         edited_suffix = "with edits" if review.get("corrected_data") else "as-is"
-        when = review.get("reviewed_at")
-        when_str = f" on {when:%Y-%m-%d %H:%M} UTC" if when else ""
+        when_str = _format_ist(review.get("reviewed_at"))
         st.success(f"Approved ({edited_suffix}){when_str}. You can edit and re-approve below.")
 
     # Prefill from a prior human correction if one exists, else the model's
@@ -462,35 +493,35 @@ if file_path:
         _render_pipeline_stages(result.history)
         st.divider()
 
-        col_image, col_report = st.columns([1, 1])
+        # Source image on the LEFT, the things you do WITH it on the right, as
+        # tabs — so a reviewer reads the document and corrects fields side by
+        # side (D10: the image is always next to the output). Review is the
+        # first tab because acting on the extraction is the primary job here;
+        # the validation report that explains the flags is one tab over.
+        col_image, col_work = st.columns([1, 1])
 
         with col_image:
             st.subheader("Source document")
             for page in pages:
                 st.image(page.image, width="stretch")
 
-        with col_report:
-            st.subheader("Validation report")
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Errors", len(report["errors"]))
-            m2.metric("Warnings", len(report["warnings"]))
-            m3.metric("Passed", len(report["pass"]))
-            st.caption("Only errors trigger automatic correction — warnings are informational.")
-
-            _render_report_group("Errors", report["errors"], "red")
-            _render_report_group("Warnings", report["warnings"], "orange")
-            with st.expander(f"Pass ({len(report['pass'])})", expanded=False):
-                for entry in report["pass"]:
-                    line = f"**{entry['field']}**: {entry['value']}"
-                    if entry["source_note"]:
-                        line += f"  \n_source: {entry['source_note']}_"
-                    st.markdown(line)
+        with col_work:
+            n_flags = len(report["errors"]) + len(report["warnings"])
+            review_tab, report_tab = st.tabs(
+                [
+                    "📝 Review & approve",
+                    f"✅ Validation report ({n_flags} flagged)"
+                    if n_flags
+                    else "✅ Validation report",
+                ]
+            )
+            with review_tab:
+                _render_review_section(schema_id, document, report, document_id)
+            with report_tab:
+                _render_validation_report(report)
 
         st.divider()
         _render_agentic_panel(result.final_state)
-
-        st.divider()
-        _render_review_section(schema_id, document, report, document_id)
 
         st.divider()
         st.subheader("Export")
