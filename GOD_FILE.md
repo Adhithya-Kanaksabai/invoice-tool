@@ -758,4 +758,21 @@ pair that's free eval data later), edited values are re-validated through the sa
 extractor uses, and "approved as-is" vs "approved with edits" are stored as distinct facts. Needed a
 DB migration (Alembic, verified through both revisions) and a Streamlit `session_state` guard that
 also fixed a latent re-run-the-whole-pipeline-on-every-click bug. Verified end-to-end with
-Streamlit's `AppTest`. Test suite grew from 122 to 150._
+Streamlit's `AppTest`.
+
+Immediately after that shipped, the live deployment broke in a **fourth** distinct
+deploy-environment way — and this one is the most instructive. Streamlit Community Cloud served the
+new `app.py` against a **stale cached `persistence` module** (it re-runs the script in the same
+process without always reimporting changed modules), so `from persistence import
+get_document_review` failed even though the code was correct on `main`. A process reboot fixes that
+— but it exposed a second, worse latent bug hiding behind it: Cloud's SQLite file isn't in git, so a
+redeploy `git pull`s new code while leaving the OLD database in place, and `init_db()`'s
+`create_all()` only ever creates missing TABLES, never missing COLUMNS — so the review-loop columns
+would be absent and the app would crash at query time with "no such column: review_status." Fixed by
+making `init_db()` self-healing: after `create_all`, it additively ADDs any model column missing
+from an existing table (never drops, never alters, backfills via the column's `server_default`).
+Reproduced the exact failure in a test (old table + a row → columns added, row backfilled) before
+fixing it. The through-line across all four deploy bugs: local dev and Docker both quietly satisfy
+environment assumptions (a pre-start Alembic hook, a fresh process, a present dependency) that the
+one genuinely different deployment target does not — which is exactly why they only ever surface on
+Streamlit Cloud, one redeploy at a time. Test suite grew from 122 to 152._

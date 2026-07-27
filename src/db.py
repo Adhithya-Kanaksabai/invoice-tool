@@ -58,7 +58,50 @@ def init_db() -> None:
     migration history. Alembic (see alembic/) is the real schema-evolution
     path for anything that already has data in it — this is only for a
     fresh SQLite file or a throwaway test database.
+
+    Then reconcile additive column changes (see _ensure_additive_columns).
     """
     from models import Base
 
     Base.metadata.create_all(engine)
+    _ensure_additive_columns()
+
+
+def _ensure_additive_columns() -> None:
+    """
+    Add any model-defined column that's missing from an already-existing table.
+
+    Why this exists: create_all() above only ever creates missing TABLES — it
+    never adds a missing COLUMN to a table that already exists. On Streamlit
+    Community Cloud there's no pre-start hook to run Alembic, AND the app's
+    SQLite file is not tracked in git, so a redeploy that `git pull`s new code
+    can leave the OLD database file in place — a file whose `documents` table
+    predates, say, the review-loop columns. Without this, the app would import
+    fine and then crash at query time with "no such column: review_status".
+
+    Additive and idempotent by construction: it only ever ADDs columns the
+    models declare and the table lacks — never drops, never alters, never
+    touches data. Alembic remains the real migration path for local/Docker
+    (and for anything non-additive); this is the narrow safety net for the one
+    environment that can't run it. A column added here uses its model-declared
+    server_default so existing rows backfill correctly (that's why
+    Document.review_status carries a server_default, not just a Python default).
+    """
+    from sqlalchemy import inspect, text
+    from sqlalchemy.schema import CreateColumn
+
+    from models import Base
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue  # create_all just made it — already fully current
+            existing_columns = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in existing_columns:
+                    continue
+                column_ddl = CreateColumn(column).compile(dialect=engine.dialect)
+                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column_ddl}"))
