@@ -213,25 +213,37 @@ def _render_pipeline_stages(history: list[str]) -> None:
             col.badge(label, icon="⏭️", color="gray")  # correction_worker: not needed this run
 
 
-def _render_agentic_panel(final_state: dict) -> None:
-    st.subheader("Agentic Correction Worker")
+def _render_agentic_status(final_state: dict) -> None:
+    """
+    Compact status of the one agentic component — shown right under the
+    Pipeline stages row (not as its own big section), since "did the
+    Correction Worker fire, and how" is status that belongs with the rest of
+    the run status. The common case (never fired) is a single badge; the rare
+    fired case expands to the fields it re-examined and the model's rationale.
+    """
     retried_fields = final_state.get("retried_fields")
 
     if not retried_fields:
         if final_state.get("correction_attempted_but_failed"):
             st.badge(
-                "Attempted — could not resolve, original values kept", icon="⚠️", color="orange"
+                "Agentic correction attempted — couldn't resolve, original values kept",
+                icon="⚠️",
+                color="orange",
             )
             reason = final_state.get("correction_failure_reason")
             if reason:
                 st.caption(reason)
             return
-        st.badge("Not needed — passed validation on the first pass", icon="✅", color="green")
+        st.badge(
+            "Agentic correction not needed — passed validation on the first pass",
+            icon="✅",
+            color="green",
+        )
         return
 
     used_fallback = final_state.get("correction_used_fallback")
     with st.container(border=True):
-        st.badge("Correction fired", icon="🤖", color="orange")
+        st.badge("🤖 Agentic correction fired", color="orange")
         st.markdown(f"**Fields re-examined:** {', '.join(sorted(retried_fields))}")
         note = final_state.get("correction_note")
         if note:
@@ -490,14 +502,17 @@ if file_path:
                 icon="♻️",
             )
 
+        # Run status up top, compact: the pipeline-stage strip, and directly
+        # under it the one-line agentic-correction status — it's status, so it
+        # belongs with the stages, not as its own big section far below.
         _render_pipeline_stages(result.history)
+        _render_agentic_status(result.final_state)
         st.divider()
 
-        # Source image on the LEFT, the things you do WITH it on the right, as
-        # tabs — so a reviewer reads the document and corrects fields side by
-        # side (D10: the image is always next to the output). Review is the
-        # first tab because acting on the extraction is the primary job here;
-        # the validation report that explains the flags is one tab over.
+        # The document and the two things you do with it, side by side (D10):
+        # source image on the left, Review / Validation tabs on the right.
+        # Review is the first tab (acting on the extraction is the primary
+        # job); the validation report explaining the flags is one tab over.
         col_image, col_work = st.columns([1, 1])
 
         with col_image:
@@ -521,9 +536,6 @@ if file_path:
                 _render_validation_report(report)
 
         st.divider()
-        _render_agentic_panel(result.final_state)
-
-        st.divider()
         st.subheader("Export")
         st.caption(
             "Exports the model's original extraction. Human corrections are saved to the database."
@@ -540,9 +552,14 @@ if file_path:
                 data=json_path.read_text(),
                 file_name="result.json",
                 mime="application/json",
+                width="stretch",
             )
             col_csv.download_button(
-                "Download CSV", data=csv_path.read_text(), file_name="result.csv", mime="text/csv"
+                "Download CSV",
+                data=csv_path.read_text(),
+                file_name="result.csv",
+                mime="text/csv",
+                width="stretch",
             )
 else:
     st.info("Upload a document, or pick a sample invoice from the dropdown, to get started.")
